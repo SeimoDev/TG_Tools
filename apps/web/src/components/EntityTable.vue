@@ -1,31 +1,37 @@
 ﻿<template>
-  <table class="entity-table">
-    <thead>
-      <tr>
-        <th>
-          <input type="checkbox" :checked="allChecked" @change="toggleAll" />
-        </th>
-        <th>标题</th>
-        <th>ID</th>
-        <th>用户名</th>
-        <th>状态</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr v-for="item in items" :key="item.id">
-        <td>
-          <input type="checkbox" :checked="selectedIds.has(item.id)" @change="toggleOne(item.id)" />
-        </td>
-        <td>{{ item.title }}</td>
-        <td>{{ item.id }}</td>
-        <td>{{ item.username || "-" }}</td>
-        <td>{{ item.isDeleted ? "已注销" : "正常" }}</td>
-      </tr>
-      <tr v-if="items.length === 0">
-        <td colspan="5" class="empty">暂无数据</td>
-      </tr>
-    </tbody>
-  </table>
+  <div class="table-scroll">
+    <v-table density="comfortable">
+      <thead>
+        <tr>
+          <th class="text-left" style="width: 44px">
+            <v-checkbox-btn :model-value="allChecked" @update:model-value="toggleAll" />
+          </th>
+          <th class="text-left">标题</th>
+          <th class="text-left">ID</th>
+          <th class="text-left">用户名</th>
+          <th class="text-left">状态</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="item in items" :key="item.id">
+          <td>
+            <v-checkbox-btn :model-value="selectedIds.has(item.id)" @update:model-value="toggleOne(item.id)" />
+          </td>
+          <td>{{ item.title }}</td>
+          <td><code>{{ item.id }}</code></td>
+          <td>{{ item.username || "-" }}</td>
+          <td>
+            <v-chip :color="statusColor(item)" size="small" label>
+              {{ statusText(item) }}
+            </v-chip>
+          </td>
+        </tr>
+        <tr v-if="items.length === 0">
+          <td colspan="5" class="text-center text-medium-emphasis py-6">暂无数据</td>
+        </tr>
+      </tbody>
+    </v-table>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -43,8 +49,23 @@ const emit = defineEmits<{
 
 const allChecked = computed(() => props.items.length > 0 && props.items.every((item) => props.selectedIds.has(item.id)));
 
-const toggleAll = (event: Event) => {
-  const checked = (event.target as HTMLInputElement).checked;
+const statusText = (item: EntityItem) => {
+  if (item.type === "non_friend_chat") {
+    return "非好友";
+  }
+
+  return item.isDeleted ? "已注销" : "正常";
+};
+
+const statusColor = (item: EntityItem) => {
+  if (item.type === "non_friend_chat") {
+    return "warning";
+  }
+
+  return item.isDeleted ? "warning" : "success";
+};
+
+const toggleAll = (checked: boolean) => {
   const next = new Set(props.selectedIds);
 
   for (const item of props.items) {

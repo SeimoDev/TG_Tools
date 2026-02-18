@@ -1,0 +1,12 @@
+﻿:root {
+  --md2-shell-max-width: 1360px;
+  --md2-page-padding-mobile: 16px;
+  --md2-page-padding-desktop: 24px;
+  --md2-surface-radius: 12px;
+  --md2-card-gap: 16px;
+  --md2-danger: #b00020;
+}
+
+.v-theme--md2Dark {
+  --md2-danger: #ef9a9a;
+}

@@ -36,7 +36,7 @@ export class BatchService {
 
     const filtered = entities.filter((item) => {
       const actionType = this.expectedEntityType(action);
-      const keep = item.type === actionType || action === "CLEANUP_DELETED_CONTACTS";
+      const keep = item.type === actionType;
       if (!keep) {
         warnings.push(`已忽略 ${item.title}：类型与动作 ${action} 不匹配。`);
       }
@@ -53,6 +53,11 @@ export class BatchService {
   async createDeletedContactsPreview(): Promise<BatchPreviewResponse> {
     const deleted = await this.telegramService.previewDeletedFriends();
     return this.previewStore.create("CLEANUP_DELETED_CONTACTS", deleted);
+  }
+
+  async createNonFriendChatsPreview(): Promise<BatchPreviewResponse> {
+    const chats = await this.telegramService.previewNonFriendPrivateChats();
+    return this.previewStore.create("CLEANUP_NON_FRIEND_CHATS", chats);
   }
 
   execute(request: BatchExecuteRequest): { jobId: string } {
@@ -149,6 +154,11 @@ export class BatchService {
       return;
     }
 
+    if (action === "CLEANUP_NON_FRIEND_CHATS") {
+      await this.telegramService.clearNonFriendPrivateChat(item);
+      return;
+    }
+
     if (action === "LEAVE_GROUPS") {
       await this.telegramService.leaveGroup(item);
       return;
@@ -165,6 +175,10 @@ export class BatchService {
   private expectedEntityType(action: BatchAction) {
     if (action === "DELETE_FRIENDS" || action === "CLEANUP_DELETED_CONTACTS") {
       return "friend";
+    }
+
+    if (action === "CLEANUP_NON_FRIEND_CHATS") {
+      return "non_friend_chat";
     }
 
     if (action === "LEAVE_GROUPS") {

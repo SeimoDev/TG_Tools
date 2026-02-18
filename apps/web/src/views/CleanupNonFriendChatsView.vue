@@ -1,20 +1,20 @@
 ﻿<template>
   <v-card>
     <v-card-title class="card-title-row">
-      <span class="text-h6">批量清理已注销账号</span>
-      <v-btn color="primary" :loading="busy" :disabled="busy" @click="onPreview">扫描已注销联系人</v-btn>
+      <span class="text-h6">一键清理非好友私聊记录</span>
+      <v-btn color="primary" :loading="busy" :disabled="busy" @click="onPreview">扫描非好友私聊</v-btn>
     </v-card-title>
 
     <v-card-text>
       <v-progress-linear v-if="busy" indeterminate color="primary" class="mb-4" />
 
-      <v-alert v-if="preview" type="info" class="mb-4">检测到 {{ preview.total }} 个已注销账号。</v-alert>
+      <v-alert v-if="preview" type="info" class="mb-4">检测到 {{ preview.total }} 个非好友私聊会话。</v-alert>
 
       <EntityTable :items="preview?.items || []" :selected-ids="allSelected" @update="noop" />
 
       <div class="d-flex flex-wrap justify-space-between align-center ga-2 mt-4">
         <v-btn color="error" :disabled="!preview || preview.total === 0 || busy" @click="confirmOpen = true">
-          一键清理已注销账号
+          一键清理全部非好友私聊
         </v-btn>
         <v-btn variant="text" to="/jobs">查看任务中心</v-btn>
       </div>
@@ -25,8 +25,8 @@
 
   <ConfirmModal
     :open="confirmOpen"
-    title="确认清理已注销账号"
-    :summary="`将删除 ${preview?.total || 0} 个已注销联系人。`"
+    title="确认清理非好友私聊记录"
+    :summary="`将清理 ${preview?.total || 0} 个非好友私聊会话的聊天记录。`"
     confirm-text="CONFIRM"
     :busy="busy"
     @cancel="confirmOpen = false"
@@ -40,7 +40,7 @@ import { useRouter } from "vue-router";
 import type { BatchPreviewResponse } from "@tg-tools/shared";
 import ConfirmModal from "../components/ConfirmModal.vue";
 import EntityTable from "../components/EntityTable.vue";
-import { executeDeletedContacts, previewDeletedContacts } from "../services/api";
+import { executeNonFriendChats, previewNonFriendChats } from "../services/api";
 import { toErrorMessage } from "../utils/error";
 
 const router = useRouter();
@@ -55,14 +55,14 @@ const allSelected = computed(() => {
 });
 
 const noop = () => {
-  // cleanup page always selects all deleted contacts
+  // one-click cleanup page always selects all scanned conversations
 };
 
 const onPreview = async () => {
   error.value = "";
   busy.value = true;
   try {
-    preview.value = await previewDeletedContacts();
+    preview.value = await previewNonFriendChats();
   } catch (e) {
     error.value = toErrorMessage(e);
   } finally {
@@ -79,7 +79,7 @@ const onExecute = async () => {
   busy.value = true;
 
   try {
-    const result = await executeDeletedContacts(preview.value.previewToken);
+    const result = await executeNonFriendChats(preview.value.previewToken);
     confirmOpen.value = false;
 
     await router.push({

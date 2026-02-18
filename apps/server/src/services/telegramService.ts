@@ -309,6 +309,10 @@ export class TelegramService {
       items = type === "group" ? groups : channels;
     }
 
+    if (type === "non_friend_chat") {
+      items = await this.fetchNonFriendPrivateChats(client);
+    }
+
     const normalized = normalizeText(search || "");
     const filtered = normalized
       ? items.filter((item) => {
@@ -336,6 +340,11 @@ export class TelegramService {
     const client = await this.requireAuthorizedClient();
     const friends = await this.fetchFriends(client);
     return friends.filter((item) => item.isDeleted);
+  }
+
+  async previewNonFriendPrivateChats(): Promise<EntityItem[]> {
+    const client = await this.requireAuthorizedClient();
+    return this.fetchNonFriendPrivateChats(client);
   }
 
   async deleteFriend(target: EntityItem): Promise<void> {
@@ -406,6 +415,30 @@ export class TelegramService {
         })
       )
     );
+  }
+
+  async clearNonFriendPrivateChat(target: EntityItem): Promise<void> {
+    const client = await this.requireAuthorizedClient();
+    const peer = await this.resolveInputPeerUser(client, target);
+
+    let offset = 0;
+    let retries = 0;
+
+    do {
+      const result = await retryWithFloodWait(() =>
+        client.invoke(
+          new Api.messages.DeleteHistory({
+            peer,
+            maxId: 0,
+            revoke: true,
+            justClear: false
+          })
+        )
+      );
+
+      offset = (result as Api.messages.AffectedHistory).offset || 0;
+      retries += 1;
+    } while (offset > 0 && retries < 50);
   }
 
   private getClientOrThrow(): TelegramClient {
@@ -608,5 +641,53 @@ export class TelegramService {
     }
 
     return [groups, channels];
+  }
+
+  private async fetchNonFriendPrivateChats(client: TelegramClient): Promise<EntityItem[]> {
+    const dialogs = await retryWithFloodWait(() => client.getDialogs({}));
+    const nonFriends: EntityItem[] = [];
+
+    for (const dialog of dialogs) {
+      const entity = dialog.entity;
+
+      if (!(entity instanceof Api.User)) {
+        continue;
+      }
+
+      if (entity.self || entity.contact || entity.bot) {
+        continue;
+      }
+
+      nonFriends.push({
+        id: String(entity.id),
+        accessHash: entity.accessHash ? String(entity.accessHash) : undefined,
+        type: "non_friend_chat",
+        title: toTitle(entity.firstName, entity.lastName, entity.username, String(entity.id)),
+        username: entity.username ?? undefined,
+        isDeleted: Boolean(entity.deleted)
+      });
+    }
+
+    return nonFriends;
+  }
+
+  private async resolveInputPeerUser(client: TelegramClient, target: EntityItem): Promise<Api.InputPeerUser> {
+    if (target.accessHash) {
+      return new Api.InputPeerUser({
+        userId: bigInt(target.id),
+        accessHash: bigInt(target.accessHash)
+      });
+    }
+
+    try {
+      const inputPeer = await client.getInputEntity(bigInt(target.id));
+      if (inputPeer instanceof Api.InputPeerUser) {
+        return inputPeer;
+      }
+    } catch {
+      // ignore and throw a friendly error below
+    }
+
+    throw new HttpError(400, `私聊 ${target.title} 缺少 accessHash，无法清理聊天记录。`);
   }
 }

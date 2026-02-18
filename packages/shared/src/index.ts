@@ -1,4 +1,4 @@
-﻿export type EntityType = "friend" | "group" | "channel";
+﻿export type EntityType = "friend" | "group" | "channel" | "non_friend_chat";
 
 export interface ProxyConfig {
   enabled: boolean;
@@ -49,7 +49,8 @@ export type BatchAction =
   | "DELETE_FRIENDS"
   | "LEAVE_GROUPS"
   | "UNSUBSCRIBE_CHANNELS"
-  | "CLEANUP_DELETED_CONTACTS";
+  | "CLEANUP_DELETED_CONTACTS"
+  | "CLEANUP_NON_FRIEND_CHATS";
 
 export interface BatchPreviewRequest {
   action: BatchAction;

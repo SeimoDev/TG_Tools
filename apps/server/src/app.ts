@@ -47,19 +47,25 @@ const passwordSchema = z.object({
 });
 
 const entitiesQuerySchema = z.object({
-  type: z.enum(["friend", "group", "channel"]),
+  type: z.enum(["friend", "group", "channel", "non_friend_chat"]),
   search: z.string().optional().default(""),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20)
 });
 
 const batchPreviewSchema = z.object({
-  action: z.enum(["DELETE_FRIENDS", "LEAVE_GROUPS", "UNSUBSCRIBE_CHANNELS", "CLEANUP_DELETED_CONTACTS"]),
+  action: z.enum([
+    "DELETE_FRIENDS",
+    "LEAVE_GROUPS",
+    "UNSUBSCRIBE_CHANNELS",
+    "CLEANUP_DELETED_CONTACTS",
+    "CLEANUP_NON_FRIEND_CHATS"
+  ]),
   entities: z.array(
     z.object({
       id: z.string().min(1),
       accessHash: z.string().optional(),
-      type: z.enum(["friend", "group", "channel"]),
+      type: z.enum(["friend", "group", "channel", "non_friend_chat"]),
       title: z.string().min(1),
       username: z.string().optional(),
       isDeleted: z.boolean().optional()
@@ -68,7 +74,13 @@ const batchPreviewSchema = z.object({
 });
 
 const batchExecuteSchema = z.object({
-  action: z.enum(["DELETE_FRIENDS", "LEAVE_GROUPS", "UNSUBSCRIBE_CHANNELS", "CLEANUP_DELETED_CONTACTS"]),
+  action: z.enum([
+    "DELETE_FRIENDS",
+    "LEAVE_GROUPS",
+    "UNSUBSCRIBE_CHANNELS",
+    "CLEANUP_DELETED_CONTACTS",
+    "CLEANUP_NON_FRIEND_CHATS"
+  ]),
   previewToken: z.string().min(1)
 });
 
@@ -222,6 +234,34 @@ app.post("/api/cleanup/deleted/execute", (req, res, next) => {
 
     const result = batchService.execute({
       action: "CLEANUP_DELETED_CONTACTS" satisfies BatchAction,
+      previewToken: payload.previewToken
+    });
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/cleanup/non-friends/preview", async (_req, res, next) => {
+  try {
+    const result = await batchService.createNonFriendChatsPreview();
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/cleanup/non-friends/execute", (req, res, next) => {
+  try {
+    const payload = z
+      .object({
+        previewToken: z.string().min(1)
+      })
+      .parse(req.body);
+
+    const result = batchService.execute({
+      action: "CLEANUP_NON_FRIEND_CHATS" satisfies BatchAction,
       previewToken: payload.previewToken
     });
 

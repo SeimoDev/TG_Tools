@@ -2,6 +2,7 @@
 import LoginView from "../views/LoginView.vue";
 import EntityView from "../views/EntityView.vue";
 import CleanupDeletedView from "../views/CleanupDeletedView.vue";
+import CleanupNonFriendChatsView from "../views/CleanupNonFriendChatsView.vue";
 import JobsView from "../views/JobsView.vue";
 
 export const router = createRouter({
@@ -39,7 +40,18 @@ export const router = createRouter({
         actionLabel: "批量取消订阅"
       }
     },
+    {
+      path: "/non-friend-chats",
+      component: EntityView,
+      props: {
+        type: "non_friend_chat",
+        action: "CLEANUP_NON_FRIEND_CHATS",
+        title: "非好友私聊管理",
+        actionLabel: "批量清理聊天记录"
+      }
+    },
     { path: "/cleanup-deleted", component: CleanupDeletedView },
+    { path: "/cleanup-non-friends", component: CleanupNonFriendChatsView },
     { path: "/jobs", component: JobsView }
   ]
 });

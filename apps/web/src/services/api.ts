@@ -122,3 +122,13 @@ export const executeDeletedContacts = async (previewToken: string): Promise<{ jo
   const { data } = await api.post("/api/cleanup/deleted/execute", { previewToken });
   return data;
 };
+
+export const previewNonFriendChats = async (): Promise<BatchPreviewResponse> => {
+  const { data } = await api.post("/api/cleanup/non-friends/preview");
+  return data;
+};
+
+export const executeNonFriendChats = async (previewToken: string): Promise<{ jobId: string }> => {
+  const { data } = await api.post("/api/cleanup/non-friends/execute", { previewToken });
+  return data;
+};

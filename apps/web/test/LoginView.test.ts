@@ -2,21 +2,24 @@
 import { mount } from "@vue/test-utils";
 import { createPinia } from "pinia";
 import LoginView from "../src/views/LoginView.vue";
+import { vuetify } from "./testUtils";
 
 describe("LoginView", () => {
   it("disables init button until api config is valid", async () => {
     const wrapper = mount(LoginView, {
       global: {
-        plugins: [createPinia()]
+        plugins: [createPinia(), vuetify]
       }
     });
 
-    const initButton = wrapper.findAll("button.primary")[0];
+    const initButton = wrapper.get('[data-test="init-btn"]');
     expect(initButton.attributes("disabled")).toBeDefined();
 
-    const inputs = wrapper.findAll("input");
-    await inputs[0].setValue("123456");
-    await inputs[1].setValue("abcde12345");
+    const apiIdInput = wrapper.get('[data-test="api-id"] input');
+    const apiHashInput = wrapper.get('[data-test="api-hash"] input');
+
+    await apiIdInput.setValue("123456");
+    await apiHashInput.setValue("abcde12345");
 
     expect(initButton.attributes("disabled")).toBeUndefined();
   });

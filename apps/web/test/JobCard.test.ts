@@ -1,6 +1,7 @@
 ﻿import { describe, expect, it } from "vitest";
 import { mount } from "@vue/test-utils";
 import JobCard from "../src/components/JobCard.vue";
+import { vuetify } from "./testUtils";
 
 describe("JobCard", () => {
   it("renders job summary", () => {
@@ -17,6 +18,9 @@ describe("JobCard", () => {
           finishedAt: "2026-01-01T00:01:00.000Z",
           results: []
         }
+      },
+      global: {
+        plugins: [vuetify]
       }
     });
 

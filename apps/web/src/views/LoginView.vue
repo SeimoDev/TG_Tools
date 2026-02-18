@@ -1,105 +1,128 @@
 ﻿<template>
-  <section class="card login-grid">
-    <div>
-      <h2>Telegram API 配置</h2>
-      <p class="muted">`api_id / api_hash` 在前端本地保存。初始化后可继续登录流程。</p>
+  <v-row>
+    <v-col cols="12" md="6">
+      <v-card>
+        <v-card-title class="text-h6">Telegram API 配置</v-card-title>
+        <v-card-text>
+          <p class="text-body-2 text-medium-emphasis mb-4">`api_id / api_hash` 在前端本地保存。初始化后可继续登录流程。</p>
 
-      <div class="form-grid">
-        <label>
-          API ID
-          <input v-model.number="auth.config.apiId" type="number" min="1" placeholder="123456" />
-        </label>
-        <label>
-          API Hash
-          <input v-model="auth.config.apiHash" type="text" placeholder="your_api_hash" />
-        </label>
-      </div>
+          <v-row>
+            <v-col cols="12" sm="6">
+              <v-text-field
+                v-model.number="auth.config.apiId"
+                type="number"
+                min="1"
+                label="API ID"
+                placeholder="123456"
+                data-test="api-id"
+              />
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-text-field
+                v-model="auth.config.apiHash"
+                label="API Hash"
+                placeholder="your_api_hash"
+                data-test="api-hash"
+              />
+            </v-col>
+          </v-row>
 
-      <h3>代理（可选，SOCKS5）</h3>
-      <label class="inline-toggle">
-        <input v-model="auth.config.proxy.enabled" type="checkbox" />
-        启用代理
-      </label>
+          <v-divider class="my-2" />
 
-      <div class="form-grid" v-if="auth.config.proxy.enabled">
-        <label>
-          Host
-          <input v-model="auth.config.proxy.host" type="text" placeholder="127.0.0.1" />
-        </label>
-        <label>
-          Port
-          <input v-model.number="auth.config.proxy.port" type="number" min="1" placeholder="1080" />
-        </label>
-        <label>
-          Username
-          <input v-model="auth.config.proxy.username" type="text" placeholder="optional" />
-        </label>
-        <label>
-          Password
-          <input v-model="auth.config.proxy.password" type="password" placeholder="optional" />
-        </label>
-      </div>
+          <v-switch v-model="auth.config.proxy.enabled" label="启用代理（SOCKS5）" color="primary" />
 
-      <button class="primary" :disabled="!configValid || auth.loading" @click="onInit">
-        {{ auth.loading ? "初始化中..." : "初始化客户端" }}
-      </button>
-      <p class="muted" v-if="auth.warning">警告: {{ auth.warning }}</p>
-    </div>
+          <v-row v-if="auth.config.proxy.enabled">
+            <v-col cols="12" sm="6">
+              <v-text-field v-model="auth.config.proxy.host" label="Host" placeholder="127.0.0.1" />
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-text-field v-model.number="auth.config.proxy.port" type="number" min="1" label="Port" placeholder="1080" />
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-text-field v-model="auth.config.proxy.username" label="Username" placeholder="optional" />
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-text-field v-model="auth.config.proxy.password" type="password" label="Password" placeholder="optional" />
+            </v-col>
+          </v-row>
 
-    <div>
-      <h2>登录流程</h2>
-      <div class="form-grid">
-        <label>
-          手机号
-          <input v-model="phone" type="text" placeholder="+8613800000000" />
-        </label>
-      </div>
+          <v-btn
+            color="primary"
+            block
+            :loading="auth.loading"
+            :disabled="!configValid || auth.loading"
+            @click="onInit"
+            data-test="init-btn"
+          >
+            初始化客户端
+          </v-btn>
 
-      <div class="form-row">
-        <button class="primary" :disabled="!phone" @click="onSendCode">发送验证码</button>
-      </div>
+          <v-alert v-if="auth.warning" type="warning" class="mt-4">{{ auth.warning }}</v-alert>
+        </v-card-text>
+      </v-card>
+    </v-col>
 
-      <div class="form-grid" v-if="auth.phoneCodeHash">
-        <label>
-          验证码
-          <input v-model="code" type="text" placeholder="12345" />
-        </label>
-      </div>
+    <v-col cols="12" md="6">
+      <v-card>
+        <v-card-title class="text-h6">登录流程</v-card-title>
+        <v-card-text>
+          <v-text-field v-model="phone" label="手机号" placeholder="+8613800000000" />
 
-      <div class="form-row" v-if="auth.phoneCodeHash && !auth.needPassword">
-        <button class="danger" :disabled="!code" @click="onSignIn">提交验证码登录</button>
-      </div>
+          <v-row>
+            <v-col cols="12" sm="6">
+              <v-btn color="primary" block :disabled="!phone" @click="onSendCode">发送验证码</v-btn>
+            </v-col>
+            <v-col cols="12" sm="6">
+              <v-btn variant="outlined" block @click="onStartQrLogin">二维码登录</v-btn>
+            </v-col>
+          </v-row>
 
-      <div class="form-row qr-actions">
-        <button class="ghost" @click="onStartQrLogin">二维码登录</button>
-      </div>
+          <v-text-field v-if="auth.phoneCodeHash" v-model="code" label="验证码" placeholder="12345" />
 
-      <div class="qr-panel" v-if="qrDataUrl">
-        <img :src="qrDataUrl" alt="Telegram QR Login" class="qr-image" />
-        <p class="muted">请在手机 Telegram 中扫描并确认登录</p>
-        <p class="muted" v-if="qrExpiresAt">二维码过期时间：{{ formatTime(qrExpiresAt) }}</p>
-      </div>
+          <v-btn
+            v-if="auth.phoneCodeHash && !auth.needPassword"
+            color="primary"
+            variant="outlined"
+            block
+            class="mb-3"
+            :disabled="!code"
+            @click="onSignIn"
+          >
+            提交验证码登录
+          </v-btn>
 
-      <div v-if="auth.needPassword" class="form-grid">
-        <label>
-          二步验证密码
-          <input v-model="password" type="password" placeholder="2FA password" />
-        </label>
-      </div>
+          <v-card v-if="qrDataUrl" variant="tonal" class="mb-4">
+            <v-card-text>
+              <v-img :src="qrDataUrl" alt="Telegram QR Login" max-width="240" class="mx-auto mb-3" />
+              <p class="text-body-2 text-medium-emphasis mb-1">请在手机 Telegram 中扫描并确认登录</p>
+              <p class="text-caption text-medium-emphasis" v-if="qrExpiresAt">二维码过期时间：{{ formatTime(qrExpiresAt) }}</p>
+            </v-card-text>
+          </v-card>
 
-      <div class="form-row" v-if="auth.needPassword">
-        <button class="danger" :disabled="!password" @click="onSubmitPassword">提交二步验证</button>
-      </div>
+          <v-text-field v-if="auth.needPassword" v-model="password" type="password" label="二步验证密码" placeholder="2FA password" />
 
-      <div class="form-row" v-if="auth.authorized">
-        <button class="ghost" @click="onLogout">退出登录</button>
-      </div>
+          <v-btn
+            v-if="auth.needPassword"
+            color="primary"
+            block
+            class="mb-3"
+            :disabled="!password"
+            @click="onSubmitPassword"
+          >
+            提交二步验证
+          </v-btn>
 
-      <p class="success" v-if="auth.authorized">已登录: {{ auth.me?.firstName || auth.me?.username || auth.me?.id }}</p>
-      <p class="error" v-if="error">{{ error }}</p>
-      <p class="success" v-if="message">{{ message }}</p>
-    </div>
-  </section>
+          <v-btn v-if="auth.authorized" variant="text" block @click="onLogout">退出登录</v-btn>
+
+          <v-alert v-if="auth.authorized" type="success" class="mt-3">
+            已登录: {{ auth.me?.firstName || auth.me?.username || auth.me?.id }}
+          </v-alert>
+          <v-alert v-if="error" type="error" class="mt-3">{{ error }}</v-alert>
+          <v-alert v-if="message" type="info" class="mt-3">{{ message }}</v-alert>
+        </v-card-text>
+      </v-card>
+    </v-col>
+  </v-row>
 </template>
 
 <script setup lang="ts">

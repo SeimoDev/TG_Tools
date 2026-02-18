@@ -1,51 +1,48 @@
 ﻿<template>
-  <section class="card">
-    <div class="card-head">
-      <h2>{{ title }}</h2>
-      <div class="tools">
-        <input v-model="search" type="text" placeholder="搜索标题/用户名/ID" @keyup.enter="onSearch" />
-        <button class="ghost" :disabled="busy" @click="onSearch">
-          {{ busy ? "刷新中..." : "查询" }}
-        </button>
+  <v-card>
+    <v-card-title class="card-title-row flex-wrap">
+      <span class="text-h6">{{ title }}</span>
+      <div class="d-flex flex-wrap align-center ga-2" style="margin-left: auto">
+        <v-text-field
+          v-model="search"
+          label="搜索标题/用户名/ID"
+          density="compact"
+          style="min-width: 240px"
+          @keyup.enter="onSearch"
+        />
+        <v-btn color="primary" variant="tonal" :loading="busy" :disabled="busy" @click="onSearch">查询</v-btn>
       </div>
-    </div>
+    </v-card-title>
 
-    <div class="list-loading" v-if="busy">
-      <span class="spinner" aria-hidden="true"></span>
-      <span>列表刷新中...</span>
-    </div>
+    <v-card-text>
+      <v-progress-linear v-if="busy" indeterminate color="primary" class="mb-4" />
 
-    <p class="muted" v-if="selectedCount > 0">已选择 {{ selectedCount }} 项（跨页保留）</p>
+      <v-alert v-if="selectedCount > 0" type="info" class="mb-4">已选择 {{ selectedCount }} 项（跨页保留）</v-alert>
 
-    <EntityTable :items="items" :selected-ids="selectedIds" @update="onSelectionUpdate" />
+      <EntityTable :items="items" :selected-ids="selectedIds" @update="onSelectionUpdate" />
 
-    <div class="table-footer">
-      <p>共 {{ total }} 条，当前第 {{ page }} 页，每页 {{ pageSize }} 条</p>
-      <div class="tools">
-        <label class="page-size-control">
-          每页
-          <select v-model.number="pageSize" :disabled="busy">
-            <option :value="20">20</option>
-            <option :value="50">50</option>
-            <option :value="100">100</option>
-          </select>
-          条
-        </label>
-        <button class="ghost" :disabled="busy || page <= 1" @click="prevPage">上一页</button>
-        <button class="ghost" :disabled="busy || page * pageSize >= total" @click="nextPage">下一页</button>
+      <div class="d-flex flex-wrap justify-space-between align-center ga-3 mt-4">
+        <p class="text-body-2 text-medium-emphasis mb-0">共 {{ total }} 条，当前第 {{ page }} 页，每页 {{ pageSize }} 条</p>
+
+        <div class="d-flex flex-wrap align-center ga-2">
+          <v-select v-model="pageSize" :items="pageSizeOptions" label="每页" style="max-width: 120px" />
+          <v-btn variant="outlined" :disabled="busy || page <= 1" @click="prevPage">上一页</v-btn>
+          <v-btn variant="outlined" :disabled="busy || page * pageSize >= total" @click="nextPage">下一页</v-btn>
+        </div>
       </div>
-    </div>
 
-    <div class="actions">
-      <button class="danger" :disabled="selectedCount === 0 || busy" @click="onPreview">
-        {{ actionLabel }}（{{ selectedCount }}）
-      </button>
-      <RouterLink class="ghost link-btn" :to="`/jobs`">查看任务中心</RouterLink>
-    </div>
+      <div class="d-flex flex-wrap justify-space-between align-center ga-2 mt-4">
+        <v-btn color="error" :disabled="selectedCount === 0 || busy" @click="onPreview">
+          {{ actionLabel }}（{{ selectedCount }}）
+        </v-btn>
 
-    <p v-if="error" class="error">{{ error }}</p>
-    <p v-if="previewWarnings.length > 0" class="muted">{{ previewWarnings.join("；") }}</p>
-  </section>
+        <v-btn variant="text" :to="`/jobs`">查看任务中心</v-btn>
+      </div>
+
+      <v-alert v-if="error" type="error" class="mt-4">{{ error }}</v-alert>
+      <v-alert v-if="previewWarnings.length > 0" type="warning" class="mt-4">{{ previewWarnings.join("；") }}</v-alert>
+    </v-card-text>
+  </v-card>
 
   <ConfirmModal
     :open="confirmOpen"
@@ -60,7 +57,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { RouterLink, useRouter } from "vue-router";
+import { useRouter } from "vue-router";
 import type { BatchAction, BatchPreviewResponse, EntityItem, EntityType } from "@tg-tools/shared";
 import { createPreview, executeBatch, fetchEntities } from "../services/api";
 import ConfirmModal from "../components/ConfirmModal.vue";
@@ -82,6 +79,7 @@ const search = ref("");
 const total = ref(0);
 const page = ref(1);
 const pageSize = ref(20);
+const pageSizeOptions = [20, 50, 100];
 const busy = ref(false);
 const error = ref("");
 const previewWarnings = ref<string[]>([]);
@@ -216,13 +214,10 @@ const onExecute = async () => {
   }
 };
 
-watch(
-  pageSize,
-  async () => {
-    page.value = 1;
-    await load();
-  }
-);
+watch(pageSize, async () => {
+  page.value = 1;
+  await load();
+});
 
 watch(
   () => props.type,

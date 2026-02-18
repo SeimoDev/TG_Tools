@@ -9,15 +9,23 @@
 - 批量退出群组
 - 批量取消频道订阅
 - 批量清理已注销账号
+- 批量清理非好友私聊聊天记录
+- 一键清理全部非好友私聊聊天记录
 - 危险操作统一 `预览 -> 二次确认 -> 执行`
 
 ## 技术栈
 
-- 前端：`Vue3 + Vite + Pinia + TypeScript`
+- 前端：`Vue3 + Vite + Pinia + Vuetify 3 + TypeScript`
 - 后端：`Node.js + Express + TypeScript + GramJS`
 - 类型共享：`packages/shared`
 - 任务持久化：优先 SQLite（`node:sqlite`），失败时回退 JSON
 - 会话持久化：优先 keytar（若安装），否则回退 `apps/server/data/session.json`
+
+## 前端 UI
+
+- 采用 Material Design 2.0 风格主题（蓝色系）
+- 支持浅色/暗色模式（系统跟随 + 手动覆盖，持久化到 `tg.ui.themeMode`）
+- 响应式导航：桌面侧边导航，移动底部导航
 
 ## 目录结构
 
@@ -55,8 +63,9 @@ npm install keytar --workspace @tg-tools/server
 4. 输入手机号，发送验证码并登录；或点击二维码登录并在手机 Telegram 扫码确认。
 5. 若提示 2FA，输入二步密码。
 6. 进入好友/群组/频道页面执行批量操作。
-7. 或在 `清理已注销` 页面一键清理。
-8. 在 `任务中心` 查看执行进度、明细并导出 JSON。
+7. 在 `非好友私聊` 页面可批量清理非好友个人聊天记录。
+8. 或在 `清理已注销`、`清理非好友私聊` 页面执行一键清理。
+9. 在 `任务中心` 查看执行进度、明细并导出 JSON。
 
 ## 关键 API
 
@@ -74,6 +83,8 @@ npm install keytar --workspace @tg-tools/server
 - `GET /api/ops/:jobId`
 - `POST /api/cleanup/deleted/preview`
 - `POST /api/cleanup/deleted/execute`
+- `POST /api/cleanup/non-friends/preview`
+- `POST /api/cleanup/non-friends/execute`
 
 ## 测试与构建
 
