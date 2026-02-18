@@ -1,0 +1,23 @@
+{
+  "name": "tg-tools",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "predev": "npm run build --workspace @tg-tools/shared",
+    "dev": "concurrently \"npm run dev --workspace @tg-tools/server\" \"npm run dev --workspace @tg-tools/web\"",
+    "dev:web": "npm run dev --workspace @tg-tools/web",
+    "dev:server": "npm run dev --workspace @tg-tools/server",
+    "build": "npm run build --workspace @tg-tools/shared && npm run build --workspace @tg-tools/server && npm run build --workspace @tg-tools/web",
+    "typecheck": "npm run typecheck --workspace @tg-tools/shared && npm run typecheck --workspace @tg-tools/server && npm run typecheck --workspace @tg-tools/web",
+    "test": "npm run test --workspace @tg-tools/server && npm run test --workspace @tg-tools/web",
+    "lint": "npm run lint --workspace @tg-tools/shared && npm run lint --workspace @tg-tools/server && npm run lint --workspace @tg-tools/web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^5.7.3"
+  }
+}

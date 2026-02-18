@@ -1,0 +1,612 @@
+﻿import bigInt from "big-integer";
+import { Api, TelegramClient } from "telegram";
+import { StringSession } from "telegram/sessions";
+import type {
+  AccountProfile,
+  AuthInitResult,
+  EntityItem,
+  EntityType,
+  PagedResult,
+  TelegramConfig
+} from "@tg-tools/shared";
+import { HttpError } from "../utils/httpError.js";
+import { retryWithFloodWait } from "../utils/telegramRetry.js";
+import { SessionStore } from "./sessionStore.js";
+
+interface StatusResult {
+  authorized: boolean;
+  me?: AccountProfile;
+  usingSecureStorage: boolean;
+  warning?: string;
+}
+
+interface QrTokenState {
+  token: Buffer;
+  expiresAt: number;
+}
+
+interface QrWaitingResponse {
+  status: "WAITING";
+  qrToken: string;
+  qrLink: string;
+  expiresAt: string;
+}
+
+type QrLoginResponse = QrWaitingResponse | { status: "OK" } | { status: "PASSWORD_REQUIRED" };
+
+const normalizeText = (value: string) => value.trim().toLowerCase();
+
+const toTitle = (firstName?: string | null, lastName?: string | null, username?: string | null, fallback = "Unknown") => {
+  const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+  return fullName || username || fallback;
+};
+
+export class TelegramService {
+  private config: TelegramConfig | null = null;
+  private client: TelegramClient | null = null;
+  private session = new StringSession("");
+  private sessionStore = new SessionStore();
+  private usingSecureStorage = false;
+  private storageWarning: string | undefined;
+  private qrTokenState: QrTokenState | null = null;
+
+  async init(config: TelegramConfig): Promise<AuthInitResult> {
+    this.config = {
+      ...config,
+      apiId: Number(config.apiId),
+      apiHash: config.apiHash.trim()
+    };
+
+    if (!this.config.apiId || !this.config.apiHash) {
+      throw new HttpError(400, "apiId 和 apiHash 不能为空。");
+    }
+
+    const loaded = await this.sessionStore.load();
+    this.session = new StringSession(loaded.session || "");
+    this.usingSecureStorage = loaded.usingSecureStorage;
+    this.storageWarning = loaded.warning;
+
+    const proxy = this.buildProxyConfig(this.config);
+
+    this.client = new TelegramClient(this.session, this.config.apiId, this.config.apiHash, {
+      connectionRetries: 5,
+      // GramJS does not allow SSL/WSS transport with SOCKS/MT proxies.
+      useWSS: !proxy,
+      proxy
+    });
+    this.qrTokenState = null;
+
+    await this.client.connect();
+
+    const authorized = await this.client.checkAuthorization();
+
+    if (authorized) {
+      await this.persistSession();
+    }
+
+    return {
+      ok: true,
+      hasSavedSession: Boolean(loaded.session),
+      usingSecureStorage: this.usingSecureStorage,
+      warning: this.storageWarning
+    };
+  }
+
+  async sendCode(phone: string): Promise<{ phoneCodeHash: string }> {
+    const client = this.getClientOrThrow();
+    const credentials = this.getApiCredentials();
+
+    await client.connect();
+
+    const result = await retryWithFloodWait(() => client.sendCode(credentials, phone.trim()));
+
+    return {
+      phoneCodeHash: result.phoneCodeHash
+    };
+  }
+
+  async signIn(phone: string, code: string, phoneCodeHash: string): Promise<{ status: "OK" | "PASSWORD_REQUIRED" }> {
+    const client = this.getClientOrThrow();
+
+    await client.connect();
+
+    try {
+      await retryWithFloodWait(() =>
+        client.invoke(
+          new Api.auth.SignIn({
+            phoneNumber: phone.trim(),
+            phoneCode: code.trim(),
+            phoneCodeHash: phoneCodeHash.trim()
+          })
+        )
+      );
+
+      await this.persistSession();
+      return { status: "OK" };
+    } catch (error) {
+      const message = String((error as { errorMessage?: string; message?: string }).errorMessage ?? (error as Error).message);
+      if (message.includes("SESSION_PASSWORD_NEEDED")) {
+        return { status: "PASSWORD_REQUIRED" };
+      }
+      throw error;
+    }
+  }
+
+  async signInWithPassword(password: string): Promise<{ status: "OK" }> {
+    const client = this.getClientOrThrow();
+    const credentials = this.getApiCredentials();
+
+    await client.connect();
+
+    await retryWithFloodWait(() =>
+      client.signInWithPassword(credentials, {
+        password: async () => password,
+        onError: (error) => {
+          throw error;
+        }
+      })
+    );
+
+    await this.persistSession();
+    this.qrTokenState = null;
+
+    return { status: "OK" };
+  }
+
+  async startQrLogin(): Promise<QrLoginResponse> {
+    const client = this.getClientOrThrow();
+    await client.connect();
+
+    if (await client.checkAuthorization()) {
+      await this.persistSession();
+      this.qrTokenState = null;
+      return { status: "OK" };
+    }
+
+    const tokenState = await this.exportQrToken();
+    if (!tokenState) {
+      this.qrTokenState = null;
+      return { status: "OK" };
+    }
+
+    this.qrTokenState = tokenState;
+    return this.toQrWaitingResponse(tokenState);
+  }
+
+  async pollQrLogin(): Promise<QrLoginResponse> {
+    const client = this.getClientOrThrow();
+    await client.connect();
+
+    if (await client.checkAuthorization()) {
+      await this.persistSession();
+      this.qrTokenState = null;
+      return { status: "OK" };
+    }
+
+    let tokenState = this.qrTokenState;
+    if (!tokenState || Date.now() >= tokenState.expiresAt - 5000) {
+      tokenState = await this.exportQrToken();
+      if (!tokenState) {
+        this.qrTokenState = null;
+        return { status: "OK" };
+      }
+      this.qrTokenState = tokenState;
+      return this.toQrWaitingResponse(tokenState);
+    }
+
+    try {
+      const result = await retryWithFloodWait(() =>
+        client.invoke(
+          new Api.auth.ImportLoginToken({
+            token: tokenState.token
+          })
+        )
+      );
+
+      const resolved = await this.resolveLoginTokenResult(result);
+      if (resolved.status === "OK") {
+        this.qrTokenState = null;
+        return { status: "OK" };
+      }
+
+      this.qrTokenState = resolved.state;
+      return this.toQrWaitingResponse(resolved.state);
+    } catch (error) {
+      const message = String((error as { errorMessage?: string; message?: string }).errorMessage ?? (error as Error).message);
+
+      if (message.includes("SESSION_PASSWORD_NEEDED")) {
+        return { status: "PASSWORD_REQUIRED" };
+      }
+
+      if (message.includes("AUTH_TOKEN_EXPIRED") || message.includes("AUTH_TOKEN_INVALID")) {
+        const refreshed = await this.exportQrToken();
+        if (!refreshed) {
+          this.qrTokenState = null;
+          return { status: "OK" };
+        }
+        this.qrTokenState = refreshed;
+        return this.toQrWaitingResponse(refreshed);
+      }
+
+      throw error;
+    }
+  }
+
+  async status(): Promise<StatusResult> {
+    const client = this.client;
+
+    if (!client) {
+      return {
+        authorized: false,
+        usingSecureStorage: this.usingSecureStorage,
+        warning: this.storageWarning
+      };
+    }
+
+    await client.connect();
+    const authorized = await client.checkAuthorization();
+
+    if (!authorized) {
+      return {
+        authorized: false,
+        usingSecureStorage: this.usingSecureStorage,
+        warning: this.storageWarning
+      };
+    }
+
+    const me = await client.getMe();
+
+    const profile: AccountProfile = {
+      id: String(me.id),
+      firstName: me.firstName,
+      lastName: me.lastName,
+      username: me.username,
+      phone: me.phone
+    };
+
+    return {
+      authorized: true,
+      me: profile,
+      usingSecureStorage: this.usingSecureStorage,
+      warning: this.storageWarning
+    };
+  }
+
+  async logout(): Promise<void> {
+    const client = this.client;
+
+    if (client) {
+      try {
+        await client.invoke(new Api.auth.LogOut());
+      } catch {
+        // ignore logout errors and continue cleanup
+      }
+
+      try {
+        await client.disconnect();
+      } catch {
+        // ignore disconnect errors
+      }
+    }
+
+    await this.sessionStore.clear();
+    this.client = null;
+    this.session = new StringSession("");
+    this.qrTokenState = null;
+  }
+
+  async listEntities(type: EntityType, search: string, page: number, pageSize: number): Promise<PagedResult<EntityItem>> {
+    const client = await this.requireAuthorizedClient();
+
+    let items: EntityItem[] = [];
+
+    if (type === "friend") {
+      items = await this.fetchFriends(client);
+    }
+
+    if (type === "group" || type === "channel") {
+      const [groups, channels] = await this.fetchDialogs(client);
+      items = type === "group" ? groups : channels;
+    }
+
+    const normalized = normalizeText(search || "");
+    const filtered = normalized
+      ? items.filter((item) => {
+          return (
+            item.title.toLowerCase().includes(normalized) ||
+            item.username?.toLowerCase().includes(normalized) ||
+            item.id.toLowerCase().includes(normalized)
+          );
+        })
+      : items;
+
+    const safePage = Math.max(1, Number(page) || 1);
+    const safePageSize = Math.max(1, Math.min(100, Number(pageSize) || 20));
+    const start = (safePage - 1) * safePageSize;
+
+    return {
+      items: filtered.slice(start, start + safePageSize),
+      total: filtered.length,
+      page: safePage,
+      pageSize: safePageSize
+    };
+  }
+
+  async previewDeletedFriends(): Promise<EntityItem[]> {
+    const client = await this.requireAuthorizedClient();
+    const friends = await this.fetchFriends(client);
+    return friends.filter((item) => item.isDeleted);
+  }
+
+  async deleteFriend(target: EntityItem): Promise<void> {
+    const client = await this.requireAuthorizedClient();
+    const accessHash = target.accessHash;
+
+    if (!accessHash) {
+      throw new HttpError(400, `好友 ${target.title} 缺少 accessHash，无法删除。`);
+    }
+
+    await retryWithFloodWait(() =>
+      client.invoke(
+        new Api.contacts.DeleteContacts({
+          id: [
+            new Api.InputUser({
+              userId: bigInt(target.id),
+              accessHash: bigInt(accessHash)
+            })
+          ]
+        })
+      )
+    );
+  }
+
+  async leaveGroup(target: EntityItem): Promise<void> {
+    const client = await this.requireAuthorizedClient();
+    const accessHash = target.accessHash;
+
+    if (accessHash) {
+      await retryWithFloodWait(() =>
+        client.invoke(
+          new Api.channels.LeaveChannel({
+            channel: new Api.InputChannel({
+              channelId: bigInt(target.id),
+              accessHash: bigInt(accessHash)
+            })
+          })
+        )
+      );
+      return;
+    }
+
+    await retryWithFloodWait(() =>
+      client.invoke(
+        new Api.messages.DeleteChatUser({
+          chatId: bigInt(target.id),
+          userId: new Api.InputUserSelf()
+        })
+      )
+    );
+  }
+
+  async unsubscribeChannel(target: EntityItem): Promise<void> {
+    const client = await this.requireAuthorizedClient();
+    const accessHash = target.accessHash;
+
+    if (!accessHash) {
+      throw new HttpError(400, `频道 ${target.title} 缺少 accessHash，无法退订。`);
+    }
+
+    await retryWithFloodWait(() =>
+      client.invoke(
+        new Api.channels.LeaveChannel({
+          channel: new Api.InputChannel({
+            channelId: bigInt(target.id),
+            accessHash: bigInt(accessHash)
+          })
+        })
+      )
+    );
+  }
+
+  private getClientOrThrow(): TelegramClient {
+    if (!this.client) {
+      throw new HttpError(400, "请先初始化 Telegram API 配置。调用 /api/auth/init。");
+    }
+
+    return this.client;
+  }
+
+  private getApiCredentials() {
+    if (!this.config) {
+      throw new HttpError(400, "缺少 Telegram API 配置，请先调用 /api/auth/init。");
+    }
+
+    return {
+      apiId: this.config.apiId,
+      apiHash: this.config.apiHash
+    };
+  }
+
+  private async persistSession() {
+    const session = this.session.save();
+    const saved = await this.sessionStore.save(session);
+    this.usingSecureStorage = saved.usingSecureStorage;
+    this.storageWarning = saved.warning;
+  }
+
+  private async exportQrToken(): Promise<QrTokenState | null> {
+    const client = this.getClientOrThrow();
+    const credentials = this.getApiCredentials();
+
+    const result = await retryWithFloodWait(() =>
+      client.invoke(
+        new Api.auth.ExportLoginToken({
+          apiId: Number(credentials.apiId),
+          apiHash: credentials.apiHash,
+          exceptIds: []
+        })
+      )
+    );
+
+    const resolved = await this.resolveLoginTokenResult(result);
+    if (resolved.status === "OK") {
+      return null;
+    }
+
+    return resolved.state;
+  }
+
+  private async resolveLoginTokenResult(
+    result: Api.auth.TypeLoginToken
+  ): Promise<{ status: "WAITING"; state: QrTokenState } | { status: "OK" }> {
+    if (result instanceof Api.auth.LoginToken) {
+      return {
+        status: "WAITING",
+        state: {
+          token: result.token,
+          expiresAt: Number(result.expires) * 1000
+        }
+      };
+    }
+
+    if (result instanceof Api.auth.LoginTokenSuccess) {
+      await this.persistSession();
+      return { status: "OK" };
+    }
+
+    if (result instanceof Api.auth.LoginTokenMigrateTo) {
+      const client = this.getClientOrThrow();
+      const withSwitchDc = client as unknown as { _switchDC: (dcId: number) => Promise<void> };
+      await withSwitchDc._switchDC(result.dcId);
+
+      const migrated = await retryWithFloodWait(() =>
+        client.invoke(
+          new Api.auth.ImportLoginToken({
+            token: result.token
+          })
+        )
+      );
+
+      return this.resolveLoginTokenResult(migrated);
+    }
+
+    throw new HttpError(500, "二维码登录返回了未知结果。");
+  }
+
+  private toQrWaitingResponse(tokenState: QrTokenState): QrWaitingResponse {
+    const qrToken = tokenState.token.toString("base64url");
+    return {
+      status: "WAITING",
+      qrToken,
+      qrLink: `tg://login?token=${qrToken}`,
+      expiresAt: new Date(tokenState.expiresAt).toISOString()
+    };
+  }
+
+  private buildProxyConfig(config: TelegramConfig) {
+    if (!config.proxy?.enabled) {
+      return undefined;
+    }
+
+    return {
+      ip: config.proxy.host,
+      port: Number(config.proxy.port),
+      socksType: 5 as const,
+      username: config.proxy.username,
+      password: config.proxy.password
+    };
+  }
+
+  private async requireAuthorizedClient(): Promise<TelegramClient> {
+    const client = this.getClientOrThrow();
+    await client.connect();
+
+    const authorized = await client.checkAuthorization();
+    if (!authorized) {
+      throw new HttpError(401, "当前未登录，请先完成 Telegram 登录。");
+    }
+
+    return client;
+  }
+
+  private async fetchFriends(client: TelegramClient): Promise<EntityItem[]> {
+    const result = await retryWithFloodWait(() =>
+      client.invoke(
+        new Api.contacts.GetContacts({
+          hash: bigInt.zero
+        })
+      )
+    );
+
+    const users = (result as { users?: Api.TypeUser[] }).users ?? [];
+    const mapped: EntityItem[] = [];
+
+    for (const user of users) {
+      if (!(user instanceof Api.User)) {
+        continue;
+      }
+
+      if (!user.contact) {
+        continue;
+      }
+
+      const id = String(user.id);
+      const accessHash = user.accessHash ? String(user.accessHash) : undefined;
+
+      mapped.push({
+        id,
+        accessHash,
+        type: "friend",
+        title: toTitle(user.firstName, user.lastName, user.username, id),
+        username: user.username ?? undefined,
+        isDeleted: Boolean(user.deleted)
+      });
+    }
+
+    return mapped;
+  }
+
+  private async fetchDialogs(client: TelegramClient): Promise<[EntityItem[], EntityItem[]]> {
+    const dialogs = await retryWithFloodWait(() => client.getDialogs({}));
+
+    const groups: EntityItem[] = [];
+    const channels: EntityItem[] = [];
+
+    for (const dialog of dialogs) {
+      const entity = dialog.entity;
+
+      if (!entity) {
+        continue;
+      }
+
+      if (entity instanceof Api.Chat) {
+        groups.push({
+          id: String(entity.id),
+          type: "group",
+          title: entity.title || String(entity.id)
+        });
+        continue;
+      }
+
+      if (entity instanceof Api.Channel) {
+        const id = String(entity.id);
+        const accessHash = entity.accessHash ? String(entity.accessHash) : undefined;
+        const item: EntityItem = {
+          id,
+          accessHash,
+          type: entity.megagroup || entity.gigagroup ? "group" : "channel",
+          title: entity.title || id,
+          username: entity.username ?? undefined
+        };
+
+        if (item.type === "group") {
+          groups.push(item);
+        } else {
+          channels.push(item);
+        }
+      }
+    }
+
+    return [groups, channels];
+  }
+}

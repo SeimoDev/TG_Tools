@@ -1,0 +1,23 @@
+﻿node_modules
+npm-debug.log*
+.DS_Store
+*.log
+
+# builds
+apps/web/dist
+apps/server/dist
+packages/shared/dist
+coverage
+
+# local runtime data
+apps/server/data/*.json
+apps/server/data/*.sqlite
+apps/server/data/*.db
+
+# env
+.env
+.env.*
+
+# IDE
+.vscode
+.idea
