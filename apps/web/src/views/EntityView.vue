@@ -3,6 +3,26 @@
     <v-card-title class="card-title-row flex-wrap">
       <span class="text-h6">{{ title }}</span>
       <div class="d-flex flex-wrap align-center ga-2" style="margin-left: auto">
+        <v-select
+          v-if="supportsLastUsedSort"
+          v-model="sortBy"
+          :items="sortByOptions"
+          item-title="label"
+          item-value="value"
+          label="排序字段"
+          density="compact"
+          style="min-width: 150px"
+        />
+        <v-select
+          v-if="supportsLastUsedSort"
+          v-model="sortOrder"
+          :items="sortOrderOptions"
+          item-title="label"
+          item-value="value"
+          label="排序方向"
+          density="compact"
+          style="min-width: 130px"
+        />
         <v-text-field
           v-model="search"
           label="搜索标题/用户名/ID"
@@ -58,7 +78,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import type { BatchAction, BatchPreviewResponse, EntityItem, EntityType } from "@tg-tools/shared";
+import type { BatchAction, BatchPreviewResponse, EntityItem, EntitySortBy, EntityType, SortOrder } from "@tg-tools/shared";
 import { createPreview, executeBatch, fetchEntities } from "../services/api";
 import ConfirmModal from "../components/ConfirmModal.vue";
 import EntityTable from "../components/EntityTable.vue";
@@ -69,6 +89,9 @@ const props = defineProps<{
   action: BatchAction;
   title: string;
   actionLabel: string;
+  supportsLastUsedSort?: boolean;
+  defaultSortBy?: EntitySortBy;
+  defaultSortOrder?: SortOrder;
 }>();
 
 const router = useRouter();
@@ -80,12 +103,28 @@ const total = ref(0);
 const page = ref(1);
 const pageSize = ref(20);
 const pageSizeOptions = [20, 50, 100];
+const sortByOptions = [
+  { label: "名称", value: "title" },
+  { label: "最后使用时间", value: "last_used_at" }
+] as const;
+const sortOrderOptions = [
+  { label: "降序", value: "desc" },
+  { label: "升序", value: "asc" }
+] as const;
 const busy = ref(false);
 const error = ref("");
 const previewWarnings = ref<string[]>([]);
 
 const confirmOpen = ref(false);
 const pendingPreview = ref<BatchPreviewResponse | null>(null);
+
+const supportsLastUsedSort = computed(() => Boolean(props.supportsLastUsedSort));
+
+const resolveSortBy = (): EntitySortBy => props.defaultSortBy ?? (supportsLastUsedSort.value ? "last_used_at" : "title");
+const resolveSortOrder = (): SortOrder => props.defaultSortOrder ?? (supportsLastUsedSort.value ? "desc" : "asc");
+
+const sortBy = ref<EntitySortBy>(resolveSortBy());
+const sortOrder = ref<SortOrder>(resolveSortOrder());
 
 const selectedIds = computed(() => new Set(Object.keys(selectedById.value)));
 const selectedItems = computed(() => Object.values(selectedById.value));
@@ -105,7 +144,9 @@ const load = async () => {
       type: props.type,
       page: page.value,
       pageSize: pageSize.value,
-      search: search.value
+      search: search.value,
+      sortBy: sortBy.value,
+      sortOrder: sortOrder.value
     });
 
     items.value = data.items;
@@ -219,6 +260,11 @@ watch(pageSize, async () => {
   await load();
 });
 
+watch([sortBy, sortOrder], async () => {
+  page.value = 1;
+  await load();
+});
+
 watch(
   () => props.type,
   async () => {
@@ -226,6 +272,8 @@ watch(
     total.value = 0;
     page.value = 1;
     pageSize.value = 20;
+    sortBy.value = resolveSortBy();
+    sortOrder.value = resolveSortOrder();
     search.value = "";
     selectedById.value = {};
     previewWarnings.value = [];

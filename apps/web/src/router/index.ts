@@ -41,6 +41,19 @@ export const router = createRouter({
       }
     },
     {
+      path: "/bots",
+      component: EntityView,
+      props: {
+        type: "bot_chat",
+        action: "CLEANUP_BOT_CHATS",
+        title: "Bot 私聊管理",
+        actionLabel: "批量清理 Bot 聊天记录",
+        supportsLastUsedSort: true,
+        defaultSortBy: "last_used_at",
+        defaultSortOrder: "desc"
+      }
+    },
+    {
       path: "/non-friend-chats",
       component: EntityView,
       props: {

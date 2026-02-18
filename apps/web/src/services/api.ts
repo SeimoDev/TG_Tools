@@ -4,8 +4,10 @@ import type {
   BatchJobResult,
   BatchPreviewRequest,
   BatchPreviewResponse,
+  EntitySortBy,
   EntityType,
   PagedResult,
+  SortOrder,
   TelegramConfig,
   EntityItem
 } from "@tg-tools/shared";
@@ -88,6 +90,8 @@ export const fetchEntities = async (params: {
   search?: string;
   page?: number;
   pageSize?: number;
+  sortBy?: EntitySortBy;
+  sortOrder?: SortOrder;
 }): Promise<PagedResult<EntityItem>> => {
   const { data } = await api.get("/api/entities", { params });
   return data;
@@ -130,5 +134,15 @@ export const previewNonFriendChats = async (): Promise<BatchPreviewResponse> => 
 
 export const executeNonFriendChats = async (previewToken: string): Promise<{ jobId: string }> => {
   const { data } = await api.post("/api/cleanup/non-friends/execute", { previewToken });
+  return data;
+};
+
+export const previewBotChats = async (): Promise<BatchPreviewResponse> => {
+  const { data } = await api.post("/api/cleanup/bots/preview");
+  return data;
+};
+
+export const executeBotChats = async (previewToken: string): Promise<{ jobId: string }> => {
+  const { data } = await api.post("/api/cleanup/bots/execute", { previewToken });
   return data;
 };

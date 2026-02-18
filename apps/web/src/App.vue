@@ -125,6 +125,7 @@ const navItems: NavItem[] = [
   { to: "/friends", label: "好友", icon: "person" },
   { to: "/groups", label: "群组", icon: "groups" },
   { to: "/channels", label: "频道", icon: "campaign" },
+  { to: "/bots", label: "Bot", icon: "smart_toy" },
   { to: "/non-friend-chats", label: "非好友私聊", icon: "chat" },
   { to: "/cleanup-deleted", label: "清理", icon: "auto_delete" },
   { to: "/cleanup-non-friends", label: "清私聊", icon: "delete_sweep" },

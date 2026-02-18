@@ -1,4 +1,7 @@
-﻿export type EntityType = "friend" | "group" | "channel" | "non_friend_chat";
+﻿export type EntityType = "friend" | "group" | "channel" | "non_friend_chat" | "bot_chat";
+
+export type EntitySortBy = "title" | "last_used_at";
+export type SortOrder = "asc" | "desc";
 
 export interface ProxyConfig {
   enabled: boolean;
@@ -43,6 +46,7 @@ export interface EntityItem {
   title: string;
   username?: string;
   isDeleted?: boolean;
+  lastUsedAt?: string;
 }
 
 export type BatchAction =
@@ -50,7 +54,8 @@ export type BatchAction =
   | "LEAVE_GROUPS"
   | "UNSUBSCRIBE_CHANNELS"
   | "CLEANUP_DELETED_CONTACTS"
-  | "CLEANUP_NON_FRIEND_CHATS";
+  | "CLEANUP_NON_FRIEND_CHATS"
+  | "CLEANUP_BOT_CHATS";
 
 export interface BatchPreviewRequest {
   action: BatchAction;

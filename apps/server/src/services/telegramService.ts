@@ -5,8 +5,10 @@ import type {
   AccountProfile,
   AuthInitResult,
   EntityItem,
+  EntitySortBy,
   EntityType,
   PagedResult,
+  SortOrder,
   TelegramConfig
 } from "@tg-tools/shared";
 import { HttpError } from "../utils/httpError.js";
@@ -39,6 +41,36 @@ const normalizeText = (value: string) => value.trim().toLowerCase();
 const toTitle = (firstName?: string | null, lastName?: string | null, username?: string | null, fallback = "Unknown") => {
   const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
   return fullName || username || fallback;
+};
+
+const toIsoDate = (value: unknown): string | undefined => {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    const ms = value > 1_000_000_000_000 ? value : value * 1000;
+    return new Date(ms).toISOString();
+  }
+
+  if (typeof value === "string" && value) {
+    const parsed = Date.parse(value);
+    if (!Number.isNaN(parsed)) {
+      return new Date(parsed).toISOString();
+    }
+  }
+
+  if (value && typeof value === "object") {
+    const maybeDate = value as { toJSDate?: () => Date };
+    if (typeof maybeDate.toJSDate === "function") {
+      const converted = maybeDate.toJSDate();
+      if (converted instanceof Date && !Number.isNaN(converted.getTime())) {
+        return converted.toISOString();
+      }
+    }
+  }
+
+  return undefined;
 };
 
 export class TelegramService {
@@ -295,7 +327,14 @@ export class TelegramService {
     this.qrTokenState = null;
   }
 
-  async listEntities(type: EntityType, search: string, page: number, pageSize: number): Promise<PagedResult<EntityItem>> {
+  async listEntities(
+    type: EntityType,
+    search: string,
+    page: number,
+    pageSize: number,
+    sortBy: EntitySortBy,
+    sortOrder: SortOrder
+  ): Promise<PagedResult<EntityItem>> {
     const client = await this.requireAuthorizedClient();
 
     let items: EntityItem[] = [];
@@ -313,6 +352,10 @@ export class TelegramService {
       items = await this.fetchNonFriendPrivateChats(client);
     }
 
+    if (type === "bot_chat") {
+      items = await this.fetchBotPrivateChats(client);
+    }
+
     const normalized = normalizeText(search || "");
     const filtered = normalized
       ? items.filter((item) => {
@@ -324,13 +367,15 @@ export class TelegramService {
         })
       : items;
 
+    const sorted = this.sortEntities(filtered, sortBy, sortOrder);
+
     const safePage = Math.max(1, Number(page) || 1);
     const safePageSize = Math.max(1, Math.min(100, Number(pageSize) || 20));
     const start = (safePage - 1) * safePageSize;
 
     return {
-      items: filtered.slice(start, start + safePageSize),
-      total: filtered.length,
+      items: sorted.slice(start, start + safePageSize),
+      total: sorted.length,
       page: safePage,
       pageSize: safePageSize
     };
@@ -345,6 +390,12 @@ export class TelegramService {
   async previewNonFriendPrivateChats(): Promise<EntityItem[]> {
     const client = await this.requireAuthorizedClient();
     return this.fetchNonFriendPrivateChats(client);
+  }
+
+  async previewBotPrivateChats(): Promise<EntityItem[]> {
+    const client = await this.requireAuthorizedClient();
+    const chats = await this.fetchBotPrivateChats(client);
+    return this.sortEntities(chats, "last_used_at", "desc");
   }
 
   async deleteFriend(target: EntityItem): Promise<void> {
@@ -418,6 +469,14 @@ export class TelegramService {
   }
 
   async clearNonFriendPrivateChat(target: EntityItem): Promise<void> {
+    await this.clearPrivateChat(target);
+  }
+
+  async clearBotPrivateChat(target: EntityItem): Promise<void> {
+    await this.clearPrivateChat(target);
+  }
+
+  private async clearPrivateChat(target: EntityItem): Promise<void> {
     const client = await this.requireAuthorizedClient();
     const peer = await this.resolveInputPeerUser(client, target);
 
@@ -664,11 +723,74 @@ export class TelegramService {
         type: "non_friend_chat",
         title: toTitle(entity.firstName, entity.lastName, entity.username, String(entity.id)),
         username: entity.username ?? undefined,
-        isDeleted: Boolean(entity.deleted)
+        isDeleted: Boolean(entity.deleted),
+        lastUsedAt: this.getDialogLastUsedAt(dialog)
       });
     }
 
     return nonFriends;
+  }
+
+  private async fetchBotPrivateChats(client: TelegramClient): Promise<EntityItem[]> {
+    const dialogs = await retryWithFloodWait(() => client.getDialogs({}));
+    const bots: EntityItem[] = [];
+
+    for (const dialog of dialogs) {
+      const entity = dialog.entity;
+
+      if (!(entity instanceof Api.User)) {
+        continue;
+      }
+
+      if (entity.self || !entity.bot) {
+        continue;
+      }
+
+      bots.push({
+        id: String(entity.id),
+        accessHash: entity.accessHash ? String(entity.accessHash) : undefined,
+        type: "bot_chat",
+        title: toTitle(entity.firstName, entity.lastName, entity.username, String(entity.id)),
+        username: entity.username ?? undefined,
+        isDeleted: Boolean(entity.deleted),
+        lastUsedAt: this.getDialogLastUsedAt(dialog)
+      });
+    }
+
+    return bots;
+  }
+
+  private getDialogLastUsedAt(dialog: unknown): string | undefined {
+    if (!dialog || typeof dialog !== "object") {
+      return undefined;
+    }
+
+    const maybeDialog = dialog as { date?: unknown };
+    return toIsoDate(maybeDialog.date);
+  }
+
+  private sortEntities(items: EntityItem[], sortBy: EntitySortBy, sortOrder: SortOrder): EntityItem[] {
+    const direction = sortOrder === "asc" ? 1 : -1;
+
+    return [...items].sort((a, b) => {
+      if (sortBy === "last_used_at") {
+        const aHas = Boolean(a.lastUsedAt);
+        const bHas = Boolean(b.lastUsedAt);
+
+        if (aHas !== bHas) {
+          return aHas ? -1 : 1;
+        }
+
+        const aTime = a.lastUsedAt ? Date.parse(a.lastUsedAt) : 0;
+        const bTime = b.lastUsedAt ? Date.parse(b.lastUsedAt) : 0;
+
+        if (aTime !== bTime) {
+          return (aTime - bTime) * direction;
+        }
+      }
+
+      return a.title.localeCompare(b.title, "zh-CN", { sensitivity: "base" }) * direction;
+    });
   }
 
   private async resolveInputPeerUser(client: TelegramClient, target: EntityItem): Promise<Api.InputPeerUser> {

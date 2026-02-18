@@ -1,5 +1,6 @@
 ﻿import "vuetify/styles";
 import { createVuetify } from "vuetify";
+import { aliases as mdAliases, md } from "vuetify/iconsets/md";
 
 const md2Light = {
   dark: false,
@@ -32,6 +33,11 @@ const md2Dark = {
 };
 
 export const vuetify = createVuetify({
+  icons: {
+    defaultSet: "md",
+    aliases: mdAliases,
+    sets: { md }
+  },
   theme: {
     defaultTheme: "md2Light",
     themes: {

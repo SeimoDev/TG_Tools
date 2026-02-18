@@ -10,6 +10,7 @@
 - 批量取消频道订阅
 - 批量清理已注销账号
 - 批量清理非好友私聊聊天记录
+- 批量清理 Bot 私聊聊天记录（支持按最后使用时间排序）
 - 一键清理全部非好友私聊聊天记录
 - 危险操作统一 `预览 -> 二次确认 -> 执行`
 
@@ -63,9 +64,10 @@ npm install keytar --workspace @tg-tools/server
 4. 输入手机号，发送验证码并登录；或点击二维码登录并在手机 Telegram 扫码确认。
 5. 若提示 2FA，输入二步密码。
 6. 进入好友/群组/频道页面执行批量操作。
-7. 在 `非好友私聊` 页面可批量清理非好友个人聊天记录。
-8. 或在 `清理已注销`、`清理非好友私聊` 页面执行一键清理。
-9. 在 `任务中心` 查看执行进度、明细并导出 JSON。
+7. 在 `Bots` 页面可按最后使用时间排序并批量清理 Bot 私聊记录。
+8. 在 `非好友私聊` 页面可批量清理非好友个人聊天记录。
+9. 或在 `清理已注销`、`清理非好友私聊` 页面执行一键清理。
+10. 在 `任务中心` 查看执行进度、明细并导出 JSON。
 
 ## 关键 API
 
@@ -77,7 +79,7 @@ npm install keytar --workspace @tg-tools/server
 - `GET /api/auth/qr/status`
 - `GET /api/auth/status`
 - `POST /api/auth/logout`
-- `GET /api/entities?type=friend|group|channel`
+- `GET /api/entities?type=friend|group|channel|non_friend_chat|bot_chat&sortBy=title|last_used_at&sortOrder=asc|desc`
 - `POST /api/ops/preview`
 - `POST /api/ops/execute`
 - `GET /api/ops/:jobId`
@@ -85,6 +87,8 @@ npm install keytar --workspace @tg-tools/server
 - `POST /api/cleanup/deleted/execute`
 - `POST /api/cleanup/non-friends/preview`
 - `POST /api/cleanup/non-friends/execute`
+- `POST /api/cleanup/bots/preview`
+- `POST /api/cleanup/bots/execute`
 
 ## 测试与构建
 

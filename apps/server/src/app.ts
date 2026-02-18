@@ -47,10 +47,12 @@ const passwordSchema = z.object({
 });
 
 const entitiesQuerySchema = z.object({
-  type: z.enum(["friend", "group", "channel", "non_friend_chat"]),
+  type: z.enum(["friend", "group", "channel", "non_friend_chat", "bot_chat"]),
   search: z.string().optional().default(""),
   page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().positive().max(100).default(20)
+  pageSize: z.coerce.number().int().positive().max(100).default(20),
+  sortBy: z.enum(["title", "last_used_at"]).optional().default("title"),
+  sortOrder: z.enum(["asc", "desc"]).optional().default("asc")
 });
 
 const batchPreviewSchema = z.object({
@@ -59,16 +61,18 @@ const batchPreviewSchema = z.object({
     "LEAVE_GROUPS",
     "UNSUBSCRIBE_CHANNELS",
     "CLEANUP_DELETED_CONTACTS",
-    "CLEANUP_NON_FRIEND_CHATS"
+    "CLEANUP_NON_FRIEND_CHATS",
+    "CLEANUP_BOT_CHATS"
   ]),
   entities: z.array(
     z.object({
       id: z.string().min(1),
       accessHash: z.string().optional(),
-      type: z.enum(["friend", "group", "channel", "non_friend_chat"]),
+      type: z.enum(["friend", "group", "channel", "non_friend_chat", "bot_chat"]),
       title: z.string().min(1),
       username: z.string().optional(),
-      isDeleted: z.boolean().optional()
+      isDeleted: z.boolean().optional(),
+      lastUsedAt: z.string().optional()
     })
   )
 });
@@ -79,7 +83,8 @@ const batchExecuteSchema = z.object({
     "LEAVE_GROUPS",
     "UNSUBSCRIBE_CHANNELS",
     "CLEANUP_DELETED_CONTACTS",
-    "CLEANUP_NON_FRIEND_CHATS"
+    "CLEANUP_NON_FRIEND_CHATS",
+    "CLEANUP_BOT_CHATS"
   ]),
   previewToken: z.string().min(1)
 });
@@ -171,7 +176,14 @@ app.post("/api/auth/logout", async (_req, res, next) => {
 app.get("/api/entities", async (req, res, next) => {
   try {
     const query = entitiesQuerySchema.parse(req.query);
-    const result = await telegramService.listEntities(query.type, query.search, query.page, query.pageSize);
+    const result = await telegramService.listEntities(
+      query.type,
+      query.search,
+      query.page,
+      query.pageSize,
+      query.sortBy,
+      query.sortOrder
+    );
     res.json(result);
   } catch (error) {
     next(error);
@@ -262,6 +274,34 @@ app.post("/api/cleanup/non-friends/execute", (req, res, next) => {
 
     const result = batchService.execute({
       action: "CLEANUP_NON_FRIEND_CHATS" satisfies BatchAction,
+      previewToken: payload.previewToken
+    });
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/cleanup/bots/preview", async (_req, res, next) => {
+  try {
+    const result = await batchService.createBotChatsPreview();
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/cleanup/bots/execute", (req, res, next) => {
+  try {
+    const payload = z
+      .object({
+        previewToken: z.string().min(1)
+      })
+      .parse(req.body);
+
+    const result = batchService.execute({
+      action: "CLEANUP_BOT_CHATS" satisfies BatchAction,
       previewToken: payload.previewToken
     });
 

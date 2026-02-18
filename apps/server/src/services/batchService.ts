@@ -60,6 +60,11 @@ export class BatchService {
     return this.previewStore.create("CLEANUP_NON_FRIEND_CHATS", chats);
   }
 
+  async createBotChatsPreview(): Promise<BatchPreviewResponse> {
+    const chats = await this.telegramService.previewBotPrivateChats();
+    return this.previewStore.create("CLEANUP_BOT_CHATS", chats);
+  }
+
   execute(request: BatchExecuteRequest): { jobId: string } {
     const { action, previewToken } = request;
 
@@ -159,6 +164,11 @@ export class BatchService {
       return;
     }
 
+    if (action === "CLEANUP_BOT_CHATS") {
+      await this.telegramService.clearBotPrivateChat(item);
+      return;
+    }
+
     if (action === "LEAVE_GROUPS") {
       await this.telegramService.leaveGroup(item);
       return;
@@ -179,6 +189,10 @@ export class BatchService {
 
     if (action === "CLEANUP_NON_FRIEND_CHATS") {
       return "non_friend_chat";
+    }
+
+    if (action === "CLEANUP_BOT_CHATS") {
+      return "bot_chat";
     }
 
     if (action === "LEAVE_GROUPS") {
