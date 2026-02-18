@@ -2,7 +2,6 @@
 import LoginView from "../views/LoginView.vue";
 import EntityView from "../views/EntityView.vue";
 import CleanupDeletedView from "../views/CleanupDeletedView.vue";
-import CleanupNonFriendChatsView from "../views/CleanupNonFriendChatsView.vue";
 import JobsView from "../views/JobsView.vue";
 
 export const router = createRouter({
@@ -16,8 +15,8 @@ export const router = createRouter({
       props: {
         type: "friend",
         action: "DELETE_FRIENDS",
-        title: "好友管理",
-        actionLabel: "批量删除好友"
+        titleKey: "entity.titles.friend",
+        actionLabelKey: "entity.actions.DELETE_FRIENDS"
       }
     },
     {
@@ -26,8 +25,8 @@ export const router = createRouter({
       props: {
         type: "group",
         action: "LEAVE_GROUPS",
-        title: "群组管理",
-        actionLabel: "批量退出群组"
+        titleKey: "entity.titles.group",
+        actionLabelKey: "entity.actions.LEAVE_GROUPS"
       }
     },
     {
@@ -36,8 +35,8 @@ export const router = createRouter({
       props: {
         type: "channel",
         action: "UNSUBSCRIBE_CHANNELS",
-        title: "频道管理",
-        actionLabel: "批量取消订阅"
+        titleKey: "entity.titles.channel",
+        actionLabelKey: "entity.actions.UNSUBSCRIBE_CHANNELS"
       }
     },
     {
@@ -46,8 +45,8 @@ export const router = createRouter({
       props: {
         type: "bot_chat",
         action: "CLEANUP_BOT_CHATS",
-        title: "Bot 私聊管理",
-        actionLabel: "批量清理 Bot 聊天记录",
+        titleKey: "entity.titles.bot_chat",
+        actionLabelKey: "entity.actions.CLEANUP_BOT_CHATS",
         supportsLastUsedSort: true,
         defaultSortBy: "last_used_at",
         defaultSortOrder: "desc"
@@ -59,12 +58,12 @@ export const router = createRouter({
       props: {
         type: "non_friend_chat",
         action: "CLEANUP_NON_FRIEND_CHATS",
-        title: "非好友私聊管理",
-        actionLabel: "批量清理聊天记录"
+        titleKey: "entity.titles.non_friend_chat",
+        actionLabelKey: "entity.actions.CLEANUP_NON_FRIEND_CHATS"
       }
     },
     { path: "/cleanup-deleted", component: CleanupDeletedView },
-    { path: "/cleanup-non-friends", component: CleanupNonFriendChatsView },
+    { path: "/cleanup-non-friends", redirect: "/non-friend-chats" },
     { path: "/jobs", component: JobsView }
   ]
 });

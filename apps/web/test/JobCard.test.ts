@@ -1,10 +1,12 @@
-﻿import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { mount } from "@vue/test-utils";
 import JobCard from "../src/components/JobCard.vue";
-import { vuetify } from "./testUtils";
+import { i18n, vuetify } from "./testUtils";
 
 describe("JobCard", () => {
   it("renders job summary", () => {
+    i18n.global.locale.value = "en";
+
     const wrapper = mount(JobCard, {
       props: {
         job: {
@@ -20,11 +22,11 @@ describe("JobCard", () => {
         }
       },
       global: {
-        plugins: [vuetify]
+        plugins: [i18n, vuetify]
       }
     });
 
-    expect(wrapper.text()).toContain("DELETE_FRIENDS");
-    expect(wrapper.text()).toContain("成功 8 / 失败 2 / 总计 10");
+    expect(wrapper.text()).toContain("Delete Friends");
+    expect(wrapper.text()).toContain("Success 8 / Failed 2 / Total 10");
   });
 });

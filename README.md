@@ -12,6 +12,8 @@
 - 批量清理非好友私聊聊天记录
 - 批量清理 Bot 私聊聊天记录（支持按最后使用时间排序）
 - 一键清理全部非好友私聊聊天记录
+- 登录后 Dashboard 展示头像、用户名与完整统计信息
+- 前端 i18n：简中 / 繁中 / 日语 / 英语（默认跟随浏览器，支持手动切换）
 - 危险操作统一 `预览 -> 二次确认 -> 执行`
 
 ## 技术栈
@@ -26,6 +28,7 @@
 
 - 采用 Material Design 2.0 风格主题（蓝色系）
 - 支持浅色/暗色模式（系统跟随 + 手动覆盖，持久化到 `tg.ui.themeMode`）
+- 支持多语言（`zh-CN` / `zh-TW` / `ja` / `en`，持久化到 `tg.ui.locale`）
 - 响应式导航：桌面侧边导航，移动底部导航
 
 ## 目录结构
@@ -66,8 +69,10 @@ npm install keytar --workspace @tg-tools/server
 6. 进入好友/群组/频道页面执行批量操作。
 7. 在 `Bots` 页面可按最后使用时间排序并批量清理 Bot 私聊记录。
 8. 在 `非好友私聊` 页面可批量清理非好友个人聊天记录。
-9. 或在 `清理已注销`、`清理非好友私聊` 页面执行一键清理。
+9. `非好友私聊` 页面同时支持“批量勾选清理”和“一键清理全部非好友私聊”。
 10. 在 `任务中心` 查看执行进度、明细并导出 JSON。
+11. 登录成功后，`登录` 页会切换为账户 Dashboard（支持手动刷新统计）。
+12. 可在导航区域切换界面语言；移动端可从顶部菜单切换。
 
 ## 关键 API
 
@@ -78,6 +83,7 @@ npm install keytar --workspace @tg-tools/server
 - `POST /api/auth/qr/start`
 - `GET /api/auth/qr/status`
 - `GET /api/auth/status`
+- `GET /api/auth/dashboard?force=0|1`
 - `POST /api/auth/logout`
 - `GET /api/entities?type=friend|group|channel|non_friend_chat|bot_chat&sortBy=title|last_used_at&sortOrder=asc|desc`
 - `POST /api/ops/preview`

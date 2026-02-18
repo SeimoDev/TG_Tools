@@ -32,6 +32,62 @@ export interface AccountProfile {
   phone?: string;
 }
 
+export interface DashboardProfile {
+  id: string;
+  displayName: string;
+  firstName?: string;
+  lastName?: string;
+  username?: string;
+  phone?: string;
+  avatarDataUrl?: string;
+  avatarUpdatedAt?: string;
+}
+
+export interface DashboardEntityStats {
+  friendsTotal: number;
+  deletedContactsTotal: number;
+  groupsTotal: number;
+  channelsTotal: number;
+  botChatsTotal: number;
+  nonFriendChatsTotal: number;
+  dialogsTotal: number;
+}
+
+export interface DashboardJobStats {
+  recentJobsTotal: number;
+  runningJobs: number;
+  doneJobs: number;
+  failedJobs: number;
+  successItemsTotal: number;
+  failedItemsTotal: number;
+}
+
+export interface DashboardPreviewStats {
+  activePreviewTokens: number;
+  activePreviewTargets: number;
+}
+
+export interface DashboardSystemStats {
+  usingSecureStorage: boolean;
+  proxyEnabled: boolean;
+  proxyHost?: string;
+  proxyPort?: number;
+  clientReady: boolean;
+  fetchedAt: string;
+}
+
+export interface DashboardResponse {
+  authorized: boolean;
+  profile?: DashboardProfile;
+  stats?: {
+    entities: DashboardEntityStats;
+    jobs: DashboardJobStats;
+    previews: DashboardPreviewStats;
+  };
+  system: DashboardSystemStats;
+  warning?: string;
+}
+
 export interface PagedResult<T> {
   items: T[];
   total: number;

@@ -4,6 +4,7 @@ import type {
   BatchJobResult,
   BatchPreviewRequest,
   BatchPreviewResponse,
+  DashboardResponse,
   EntitySortBy,
   EntityType,
   PagedResult,
@@ -78,6 +79,13 @@ export const pollQrLogin = async (): Promise<QrLoginResponse> => {
 
 export const authStatus = async (): Promise<AuthStatusResponse> => {
   const { data } = await api.get("/api/auth/status");
+  return data;
+};
+
+export const fetchDashboard = async (force = false): Promise<DashboardResponse> => {
+  const { data } = await api.get("/api/auth/dashboard", {
+    params: { force: force ? "1" : "0" }
+  });
   return data;
 };
 

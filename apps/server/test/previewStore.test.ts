@@ -31,4 +31,34 @@ describe("PreviewStore", () => {
 
     expect(() => store.consume(preview.previewToken, "LEAVE_GROUPS")).toThrow("PREVIEW_ACTION_MISMATCH");
   });
+
+  it("returns active preview stats", () => {
+    const store = new PreviewStore();
+
+    const a = store.create("DELETE_FRIENDS", entities);
+    store.create("LEAVE_GROUPS", [
+      {
+        id: "2",
+        type: "group",
+        title: "G"
+      },
+      {
+        id: "3",
+        type: "group",
+        title: "G2"
+      }
+    ]);
+
+    expect(store.getStats()).toEqual({
+      activePreviewTokens: 2,
+      activePreviewTargets: 3
+    });
+
+    store.consume(a.previewToken, "DELETE_FRIENDS");
+
+    expect(store.getStats()).toEqual({
+      activePreviewTokens: 1,
+      activePreviewTargets: 2
+    });
+  });
 });

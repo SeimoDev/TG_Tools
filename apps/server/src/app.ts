@@ -5,6 +5,8 @@ import type {
   BatchAction,
   BatchExecuteRequest,
   BatchPreviewRequest,
+  DashboardJobStats,
+  DashboardResponse,
   TelegramConfig
 } from "@tg-tools/shared";
 import { BatchService } from "./services/batchService.js";
@@ -44,6 +46,10 @@ const signInSchema = z.object({
 
 const passwordSchema = z.object({
   password: z.string().min(1)
+});
+
+const dashboardQuerySchema = z.object({
+  force: z.enum(["0", "1"]).optional().default("0")
 });
 
 const entitiesQuerySchema = z.object({
@@ -159,6 +165,58 @@ app.get("/api/auth/status", async (_req, res, next) => {
   try {
     const result = await telegramService.status();
     res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/auth/dashboard", async (req, res, next) => {
+  try {
+    const query = dashboardQuerySchema.parse(req.query);
+    const snapshot = await telegramService.getDashboardSnapshot(query.force === "1");
+
+    if (!snapshot.authorized) {
+      const response: DashboardResponse = {
+        authorized: false,
+        system: snapshot.system,
+        warning: snapshot.warning
+      };
+
+      res.json(response);
+      return;
+    }
+
+    const recentJobs = jobStore.listRecent();
+    const jobsStats: DashboardJobStats = {
+      recentJobsTotal: recentJobs.length,
+      runningJobs: recentJobs.filter((job) => job.status === "RUNNING").length,
+      doneJobs: recentJobs.filter((job) => job.status === "DONE").length,
+      failedJobs: recentJobs.filter((job) => job.status === "FAILED").length,
+      successItemsTotal: recentJobs.reduce((sum, job) => sum + job.successCount, 0),
+      failedItemsTotal: recentJobs.reduce((sum, job) => sum + job.failedCount, 0)
+    };
+
+    const response: DashboardResponse = {
+      authorized: true,
+      profile: snapshot.profile,
+      stats: {
+        entities: snapshot.entityStats ?? {
+          friendsTotal: 0,
+          deletedContactsTotal: 0,
+          groupsTotal: 0,
+          channelsTotal: 0,
+          botChatsTotal: 0,
+          nonFriendChatsTotal: 0,
+          dialogsTotal: 0
+        },
+        jobs: jobsStats,
+        previews: previewStore.getStats()
+      },
+      system: snapshot.system,
+      warning: snapshot.warning
+    };
+
+    res.json(response);
   } catch (error) {
     next(error);
   }

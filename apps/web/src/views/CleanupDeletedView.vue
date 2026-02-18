@@ -1,22 +1,22 @@
-﻿<template>
+<template>
   <v-card>
     <v-card-title class="card-title-row">
-      <span class="text-h6">批量清理已注销账号</span>
-      <v-btn color="primary" :loading="busy" :disabled="busy" @click="onPreview">扫描已注销联系人</v-btn>
+      <span class="text-h6">{{ t("cleanupDeleted.title") }}</span>
+      <v-btn color="primary" :loading="busy" :disabled="busy" @click="onPreview">{{ t("cleanupDeleted.scan") }}</v-btn>
     </v-card-title>
 
     <v-card-text>
       <v-progress-linear v-if="busy" indeterminate color="primary" class="mb-4" />
 
-      <v-alert v-if="preview" type="info" class="mb-4">检测到 {{ preview.total }} 个已注销账号。</v-alert>
+      <v-alert v-if="preview" type="info" class="mb-4">{{ t("cleanupDeleted.detected", { count: preview.total }) }}</v-alert>
 
       <EntityTable :items="preview?.items || []" :selected-ids="allSelected" @update="noop" />
 
       <div class="d-flex flex-wrap justify-space-between align-center ga-2 mt-4">
         <v-btn color="error" :disabled="!preview || preview.total === 0 || busy" @click="confirmOpen = true">
-          一键清理已注销账号
+          {{ t("cleanupDeleted.execute") }}
         </v-btn>
-        <v-btn variant="text" to="/jobs">查看任务中心</v-btn>
+        <v-btn variant="text" to="/jobs">{{ t("common.viewJobs") }}</v-btn>
       </div>
 
       <v-alert v-if="error" type="error" class="mt-4">{{ error }}</v-alert>
@@ -25,8 +25,8 @@
 
   <ConfirmModal
     :open="confirmOpen"
-    title="确认清理已注销账号"
-    :summary="`将删除 ${preview?.total || 0} 个已注销联系人。`"
+    :title="t('cleanupDeleted.confirmTitle')"
+    :summary="t('cleanupDeleted.confirmSummary', { count: preview?.total || 0 })"
     confirm-text="CONFIRM"
     :busy="busy"
     @cancel="confirmOpen = false"
@@ -36,6 +36,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import type { BatchPreviewResponse } from "@tg-tools/shared";
 import ConfirmModal from "../components/ConfirmModal.vue";
@@ -44,6 +45,7 @@ import { executeDeletedContacts, previewDeletedContacts } from "../services/api"
 import { toErrorMessage } from "../utils/error";
 
 const router = useRouter();
+const { t } = useI18n();
 
 const preview = ref<BatchPreviewResponse | null>(null);
 const confirmOpen = ref(false);

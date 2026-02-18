@@ -1,11 +1,13 @@
-﻿import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { mount } from "@vue/test-utils";
 import { nextTick } from "vue";
 import ConfirmModal from "../src/components/ConfirmModal.vue";
-import { vuetify } from "./testUtils";
+import { i18n, vuetify } from "./testUtils";
 
 describe("ConfirmModal", () => {
   it("enables confirm button only when phrase matches", async () => {
+    i18n.global.locale.value = "en";
+
     const wrapper = mount(ConfirmModal, {
       attachTo: document.body,
       props: {
@@ -15,7 +17,7 @@ describe("ConfirmModal", () => {
         confirmText: "CONFIRM"
       },
       global: {
-        plugins: [vuetify]
+        plugins: [i18n, vuetify]
       }
     });
 
@@ -24,13 +26,7 @@ describe("ConfirmModal", () => {
     const input = document.body.querySelector('[data-test="confirm-input"] input') as HTMLInputElement | null;
     expect(input).not.toBeNull();
 
-    const findConfirmButton = () => {
-      return Array.from(document.body.querySelectorAll("button")).find((button) => {
-        return button.textContent?.includes("确认执行");
-      }) as HTMLButtonElement | undefined;
-    };
-
-    const confirmButtonBefore = findConfirmButton();
+    const confirmButtonBefore = document.body.querySelector('[data-test="confirm-submit-btn"]') as HTMLButtonElement | null;
     expect(confirmButtonBefore).toBeTruthy();
     expect(confirmButtonBefore?.disabled).toBe(true);
 
@@ -38,7 +34,7 @@ describe("ConfirmModal", () => {
     input!.dispatchEvent(new Event("input"));
     await nextTick();
 
-    const confirmButtonAfter = findConfirmButton();
+    const confirmButtonAfter = document.body.querySelector('[data-test="confirm-submit-btn"]') as HTMLButtonElement | null;
     expect(confirmButtonAfter).toBeTruthy();
     expect(confirmButtonAfter?.disabled).toBe(false);
 

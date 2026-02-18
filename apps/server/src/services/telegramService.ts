@@ -4,6 +4,9 @@ import { StringSession } from "telegram/sessions";
 import type {
   AccountProfile,
   AuthInitResult,
+  DashboardEntityStats,
+  DashboardProfile,
+  DashboardSystemStats,
   EntityItem,
   EntitySortBy,
   EntityType,
@@ -22,6 +25,21 @@ interface StatusResult {
   warning?: string;
 }
 
+interface DashboardSnapshot {
+  authorized: boolean;
+  profile?: DashboardProfile;
+  entityStats?: DashboardEntityStats;
+  system: DashboardSystemStats;
+  warning?: string;
+}
+
+interface AvatarCacheEntry {
+  photoKey: string;
+  dataUrl: string;
+  updatedAt: string;
+  expiresAt: number;
+}
+
 interface QrTokenState {
   token: Buffer;
   expiresAt: number;
@@ -37,6 +55,41 @@ interface QrWaitingResponse {
 type QrLoginResponse = QrWaitingResponse | { status: "OK" } | { status: "PASSWORD_REQUIRED" };
 
 const normalizeText = (value: string) => value.trim().toLowerCase();
+
+const normalizeConfig = (config: TelegramConfig): TelegramConfig => ({
+  ...config,
+  apiId: Number(config.apiId),
+  apiHash: config.apiHash.trim(),
+  proxy: config.proxy
+    ? {
+        ...config.proxy,
+        enabled: Boolean(config.proxy.enabled),
+        host: (config.proxy.host || "").trim(),
+        port: Number(config.proxy.port),
+        username: config.proxy.username?.trim(),
+        password: config.proxy.password ?? ""
+      }
+    : undefined
+});
+
+const configEquals = (left: TelegramConfig | null, right: TelegramConfig): boolean => {
+  if (!left) {
+    return false;
+  }
+
+  const leftProxy = left.proxy;
+  const rightProxy = right.proxy;
+
+  return (
+    Number(left.apiId) === Number(right.apiId) &&
+    (left.apiHash || "").trim() === (right.apiHash || "").trim() &&
+    Boolean(leftProxy?.enabled) === Boolean(rightProxy?.enabled) &&
+    (leftProxy?.host || "").trim() === (rightProxy?.host || "").trim() &&
+    Number(leftProxy?.port || 0) === Number(rightProxy?.port || 0) &&
+    (leftProxy?.username || "").trim() === (rightProxy?.username || "").trim() &&
+    (leftProxy?.password || "") === (rightProxy?.password || "")
+  );
+};
 
 const toTitle = (firstName?: string | null, lastName?: string | null, username?: string | null, fallback = "Unknown") => {
   const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
@@ -74,6 +127,8 @@ const toIsoDate = (value: unknown): string | undefined => {
 };
 
 export class TelegramService {
+  private static readonly AVATAR_CACHE_TTL_MS = 10 * 60 * 1000;
+
   private config: TelegramConfig | null = null;
   private client: TelegramClient | null = null;
   private session = new StringSession("");
@@ -81,17 +136,41 @@ export class TelegramService {
   private usingSecureStorage = false;
   private storageWarning: string | undefined;
   private qrTokenState: QrTokenState | null = null;
+  private avatarCache = new Map<string, AvatarCacheEntry>();
 
   async init(config: TelegramConfig): Promise<AuthInitResult> {
-    this.config = {
-      ...config,
-      apiId: Number(config.apiId),
-      apiHash: config.apiHash.trim()
-    };
+    const normalizedConfig = normalizeConfig(config);
 
-    if (!this.config.apiId || !this.config.apiHash) {
+    if (!normalizedConfig.apiId || !normalizedConfig.apiHash) {
       throw new HttpError(400, "apiId 和 apiHash 不能为空。");
     }
+
+    // Avoid resetting QR login flow when frontend remounts/HMR triggers init with identical config.
+    if (this.client && configEquals(this.config, normalizedConfig)) {
+      await this.client.connect();
+      const authorized = await this.client.checkAuthorization();
+
+      if (authorized) {
+        await this.persistSession();
+      }
+
+      return {
+        ok: true,
+        hasSavedSession: Boolean(this.session.save()),
+        usingSecureStorage: this.usingSecureStorage,
+        warning: this.storageWarning
+      };
+    }
+
+    if (this.client) {
+      try {
+        await this.client.disconnect();
+      } catch {
+        // ignore stale connection cleanup errors
+      }
+    }
+
+    this.config = normalizedConfig;
 
     const loaded = await this.sessionStore.load();
     this.session = new StringSession(loaded.session || "");
@@ -250,6 +329,10 @@ export class TelegramService {
         return { status: "PASSWORD_REQUIRED" };
       }
 
+      if (message.includes("TIMEOUT")) {
+        return this.toQrWaitingResponse(tokenState);
+      }
+
       if (message.includes("AUTH_TOKEN_EXPIRED") || message.includes("AUTH_TOKEN_INVALID")) {
         const refreshed = await this.exportQrToken();
         if (!refreshed) {
@@ -304,6 +387,151 @@ export class TelegramService {
     };
   }
 
+  async getDashboardSnapshot(forceAvatar: boolean): Promise<DashboardSnapshot> {
+    const client = this.client;
+    const warnings: string[] = [];
+
+    if (!client) {
+      return {
+        authorized: false,
+        system: this.buildSystemStats(false),
+        warning: this.storageWarning
+      };
+    }
+
+    try {
+      await client.connect();
+    } catch (error) {
+      warnings.push(`客户端连接失败：${(error as Error).message}`);
+      return {
+        authorized: false,
+        system: this.buildSystemStats(false),
+        warning: this.joinWarnings(warnings)
+      };
+    }
+
+    const authorized = await client.checkAuthorization();
+    if (!authorized) {
+      return {
+        authorized: false,
+        system: this.buildSystemStats(true),
+        warning: this.storageWarning
+      };
+    }
+
+    let profile: DashboardProfile | undefined;
+
+    try {
+      const me = await client.getMe();
+      profile = {
+        id: String(me.id),
+        displayName: toTitle(me.firstName, me.lastName, me.username, String(me.id)),
+        firstName: me.firstName ?? undefined,
+        lastName: me.lastName ?? undefined,
+        username: me.username ?? undefined,
+        phone: me.phone ?? undefined
+      };
+
+      const avatar = await this.loadAvatarData(client, me, forceAvatar);
+      if (avatar.warning) {
+        warnings.push(avatar.warning);
+      } else {
+        profile.avatarDataUrl = avatar.avatarDataUrl;
+        profile.avatarUpdatedAt = avatar.avatarUpdatedAt;
+      }
+    } catch (error) {
+      warnings.push(`账户信息获取失败：${(error as Error).message}`);
+    }
+
+    let friendsTotal = 0;
+    let deletedContactsTotal = 0;
+
+    try {
+      const contactsResult = await retryWithFloodWait(() =>
+        client.invoke(
+          new Api.contacts.GetContacts({
+            hash: bigInt.zero
+          })
+        )
+      );
+
+      const users = (contactsResult as { users?: Api.TypeUser[] }).users ?? [];
+      for (const user of users) {
+        if (!(user instanceof Api.User) || !user.contact) {
+          continue;
+        }
+        friendsTotal += 1;
+        if (user.deleted) {
+          deletedContactsTotal += 1;
+        }
+      }
+    } catch (error) {
+      warnings.push(`联系人统计失败：${(error as Error).message}`);
+    }
+
+    let groupsTotal = 0;
+    let channelsTotal = 0;
+    let botChatsTotal = 0;
+    let nonFriendChatsTotal = 0;
+    let dialogsTotal = 0;
+
+    try {
+      const dialogs = await retryWithFloodWait(() => client.getDialogs({}));
+      dialogsTotal = dialogs.length;
+
+      for (const dialog of dialogs) {
+        const entity = dialog.entity;
+        if (!entity) {
+          continue;
+        }
+
+        if (entity instanceof Api.Chat) {
+          groupsTotal += 1;
+          continue;
+        }
+
+        if (entity instanceof Api.Channel) {
+          if (entity.megagroup || entity.gigagroup) {
+            groupsTotal += 1;
+          } else {
+            channelsTotal += 1;
+          }
+          continue;
+        }
+
+        if (entity instanceof Api.User) {
+          if (!entity.self && entity.bot) {
+            botChatsTotal += 1;
+          }
+
+          if (!entity.self && !entity.contact && !entity.bot) {
+            nonFriendChatsTotal += 1;
+          }
+        }
+      }
+    } catch (error) {
+      warnings.push(`会话统计失败：${(error as Error).message}`);
+    }
+
+    const entityStats: DashboardEntityStats = {
+      friendsTotal,
+      deletedContactsTotal,
+      groupsTotal,
+      channelsTotal,
+      botChatsTotal,
+      nonFriendChatsTotal,
+      dialogsTotal
+    };
+
+    return {
+      authorized: true,
+      profile,
+      entityStats,
+      system: this.buildSystemStats(true),
+      warning: this.joinWarnings(warnings)
+    };
+  }
+
   async logout(): Promise<void> {
     const client = this.client;
 
@@ -325,6 +553,7 @@ export class TelegramService {
     this.client = null;
     this.session = new StringSession("");
     this.qrTokenState = null;
+    this.avatarCache.clear();
   }
 
   async listEntities(
@@ -593,6 +822,88 @@ export class TelegramService {
       qrLink: `tg://login?token=${qrToken}`,
       expiresAt: new Date(tokenState.expiresAt).toISOString()
     };
+  }
+
+  private buildSystemStats(clientReady: boolean): DashboardSystemStats {
+    const proxyEnabled = Boolean(this.config?.proxy?.enabled);
+
+    return {
+      usingSecureStorage: this.usingSecureStorage,
+      proxyEnabled,
+      proxyHost: proxyEnabled ? this.config?.proxy?.host : undefined,
+      proxyPort: proxyEnabled ? Number(this.config?.proxy?.port) : undefined,
+      clientReady,
+      fetchedAt: new Date().toISOString()
+    };
+  }
+
+  private async loadAvatarData(
+    client: TelegramClient,
+    me: Api.User,
+    forceAvatar: boolean
+  ): Promise<{ avatarDataUrl?: string; avatarUpdatedAt?: string; warning?: string }> {
+    const accountId = String(me.id);
+    const photoKey = this.getPhotoKey(me);
+
+    if (!photoKey) {
+      this.avatarCache.delete(accountId);
+      return {};
+    }
+
+    const cached = this.avatarCache.get(accountId);
+    const now = Date.now();
+
+    if (!forceAvatar && cached && cached.photoKey === photoKey && cached.expiresAt > now) {
+      return {
+        avatarDataUrl: cached.dataUrl,
+        avatarUpdatedAt: cached.updatedAt
+      };
+    }
+
+    try {
+      const downloaded = await retryWithFloodWait(() =>
+        client.downloadProfilePhoto("me", {
+          isBig: false
+        })
+      );
+
+      if (!downloaded || typeof downloaded === "string" || !Buffer.isBuffer(downloaded)) {
+        return {};
+      }
+
+      const dataUrl = `data:image/jpeg;base64,${downloaded.toString("base64")}`;
+      const updatedAt = new Date().toISOString();
+
+      this.avatarCache.set(accountId, {
+        photoKey,
+        dataUrl,
+        updatedAt,
+        expiresAt: now + TelegramService.AVATAR_CACHE_TTL_MS
+      });
+
+      return {
+        avatarDataUrl: dataUrl,
+        avatarUpdatedAt: updatedAt
+      };
+    } catch (error) {
+      return {
+        warning: `头像获取失败：${(error as Error).message}`
+      };
+    }
+  }
+
+  private getPhotoKey(me: Api.User): string | undefined {
+    const photo = me.photo as { photoId?: unknown } | undefined;
+    if (!photo || typeof photo !== "object" || !photo.photoId) {
+      return undefined;
+    }
+
+    return String(photo.photoId);
+  }
+
+  private joinWarnings(warnings: string[]): string | undefined {
+    const normalized = [this.storageWarning, ...warnings].filter(Boolean) as string[];
+    return normalized.length > 0 ? normalized.join("；") : undefined;
   }
 
   private buildProxyConfig(config: TelegramConfig) {

@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="table-scroll">
     <v-table density="comfortable">
       <thead>
@@ -6,11 +6,11 @@
           <th class="text-left" style="width: 44px">
             <v-checkbox-btn :model-value="allChecked" @update:model-value="toggleAll" />
           </th>
-          <th class="text-left">标题</th>
-          <th class="text-left">ID</th>
-          <th class="text-left">用户名</th>
-          <th class="text-left">最后使用时间</th>
-          <th class="text-left">状态</th>
+          <th class="text-left">{{ t("entity.table.title") }}</th>
+          <th class="text-left">{{ t("entity.table.id") }}</th>
+          <th class="text-left">{{ t("entity.table.username") }}</th>
+          <th class="text-left">{{ t("entity.table.lastUsed") }}</th>
+          <th class="text-left">{{ t("entity.table.status") }}</th>
         </tr>
       </thead>
       <tbody>
@@ -20,7 +20,7 @@
           </td>
           <td>{{ item.title }}</td>
           <td><code>{{ item.id }}</code></td>
-          <td>{{ item.username || "-" }}</td>
+          <td>{{ item.username || t("common.na") }}</td>
           <td>{{ formatLastUsed(item.lastUsedAt) }}</td>
           <td>
             <v-chip :color="statusColor(item)" size="small" label>
@@ -29,7 +29,7 @@
           </td>
         </tr>
         <tr v-if="items.length === 0">
-          <td colspan="6" class="text-center text-medium-emphasis py-6">暂无数据</td>
+          <td colspan="6" class="text-center text-medium-emphasis py-6">{{ t("common.noData") }}</td>
         </tr>
       </tbody>
     </v-table>
@@ -38,7 +38,9 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 import type { EntityItem } from "@tg-tools/shared";
+import { formatDateTime } from "../utils/dateTime";
 
 const props = defineProps<{
   items: EntityItem[];
@@ -49,18 +51,20 @@ const emit = defineEmits<{
   update: [Set<string>];
 }>();
 
+const { t, locale } = useI18n();
+
 const allChecked = computed(() => props.items.length > 0 && props.items.every((item) => props.selectedIds.has(item.id)));
 
 const statusText = (item: EntityItem) => {
   if (item.type === "bot_chat") {
-    return "Bot";
+    return t("entity.statusBot");
   }
 
   if (item.type === "non_friend_chat") {
-    return "非好友";
+    return t("entity.statusNonFriend");
   }
 
-  return item.isDeleted ? "已注销" : "正常";
+  return item.isDeleted ? t("entity.statusDeleted") : t("entity.statusNormal");
 };
 
 const statusColor = (item: EntityItem) => {
@@ -76,16 +80,8 @@ const statusColor = (item: EntityItem) => {
 };
 
 const formatLastUsed = (lastUsedAt?: string) => {
-  if (!lastUsedAt) {
-    return "-";
-  }
-
-  const timestamp = Date.parse(lastUsedAt);
-  if (Number.isNaN(timestamp)) {
-    return "-";
-  }
-
-  return new Date(timestamp).toLocaleString();
+  const formatted = formatDateTime(lastUsedAt, locale.value);
+  return formatted ?? t("common.na");
 };
 
 const toggleAll = (checked: boolean) => {

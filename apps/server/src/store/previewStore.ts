@@ -1,5 +1,10 @@
 ﻿import { randomUUID } from "node:crypto";
-import type { BatchAction, BatchPreviewResponse, EntityItem } from "@tg-tools/shared";
+import type {
+  BatchAction,
+  BatchPreviewResponse,
+  DashboardPreviewStats,
+  EntityItem
+} from "@tg-tools/shared";
 import { PREVIEW_TOKEN_TTL_MS } from "../config.js";
 
 interface PreviewSnapshot {
@@ -56,6 +61,20 @@ export class PreviewStore {
   get(token: string): PreviewSnapshot | undefined {
     this.cleanupExpired();
     return this.snapshots.get(token);
+  }
+
+  getStats(): DashboardPreviewStats {
+    this.cleanupExpired();
+
+    let activePreviewTargets = 0;
+    for (const snapshot of this.snapshots.values()) {
+      activePreviewTargets += snapshot.items.length;
+    }
+
+    return {
+      activePreviewTokens: this.snapshots.size,
+      activePreviewTargets
+    };
   }
 
   private cleanupExpired() {

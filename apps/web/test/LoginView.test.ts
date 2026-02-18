@@ -1,14 +1,16 @@
-﻿import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { mount } from "@vue/test-utils";
 import { createPinia } from "pinia";
 import LoginView from "../src/views/LoginView.vue";
-import { vuetify } from "./testUtils";
+import { i18n, vuetify } from "./testUtils";
 
 describe("LoginView", () => {
   it("disables init button until api config is valid", async () => {
+    i18n.global.locale.value = "en";
+
     const wrapper = mount(LoginView, {
       global: {
-        plugins: [createPinia(), vuetify]
+        plugins: [createPinia(), i18n, vuetify]
       }
     });
 
