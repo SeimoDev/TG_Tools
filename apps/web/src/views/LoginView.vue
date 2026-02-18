@@ -176,6 +176,7 @@
           <v-btn
             color="primary"
             block
+            class="auth-action-btn mt-4"
             :loading="auth.loading"
             :disabled="!configValid || auth.loading"
             @click="onInit"
@@ -199,12 +200,11 @@
 
           <v-text-field v-model="phone" :label="t('auth.phoneLabel')" placeholder="+8613800000000" :disabled="!canStartLogin || actionLoading" />
 
-          <div class="login-action-row mb-3">
+          <div class="login-action-row mt-3 mb-3">
             <v-btn
               color="primary"
-              class="login-action-btn"
+              class="login-action-btn auth-action-btn"
               block
-              height="52"
               size="large"
               :loading="actionLoading"
               :disabled="!canStartLogin || !phone || actionLoading"
@@ -214,9 +214,8 @@
             </v-btn>
             <v-btn
               variant="outlined"
-              class="login-action-btn"
+              class="login-action-btn auth-action-btn"
               block
-              height="52"
               size="large"
               :loading="pollingQr"
               :disabled="!canStartLogin || actionLoading"
@@ -239,7 +238,7 @@
             color="primary"
             variant="outlined"
             block
-            class="mb-3"
+            class="mb-3 auth-action-btn"
             :disabled="!code || actionLoading"
             :loading="actionLoading"
             @click="onSignIn"
@@ -267,7 +266,7 @@
             v-if="auth.needPassword"
             color="primary"
             block
-            class="mb-3"
+            class="mt-3 mb-3 auth-action-btn"
             :disabled="!password || actionLoading"
             :loading="actionLoading"
             @click="onSubmitPassword"
@@ -396,7 +395,6 @@ const applyQrResponse = async (result: QrLoginResponse) => {
       width: 240,
       margin: 1
     });
-    auth.needPassword = false;
     return;
   }
 
@@ -427,6 +425,9 @@ const startQrPolling = () => {
 
     try {
       const status = await pollQrLogin();
+      if (!pollingQr.value) {
+        return;
+      }
       await applyQrResponse(status);
     } catch (e) {
       stopQrPolling();
@@ -488,6 +489,8 @@ const onSignIn = async () => {
 
 const onStartQrLogin = async () => {
   clearFeedback();
+  auth.needPassword = false;
+  password.value = "";
   await runAction(async () => {
     try {
       const result = await startQrLogin();

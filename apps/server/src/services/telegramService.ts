@@ -1,5 +1,6 @@
 ﻿import bigInt from "big-integer";
 import { Api, TelegramClient } from "telegram";
+import { LogLevel, Logger } from "telegram/extensions/Logger";
 import { StringSession } from "telegram/sessions";
 import type {
   AccountProfile,
@@ -55,6 +56,24 @@ interface QrWaitingResponse {
 type QrLoginResponse = QrWaitingResponse | { status: "OK" } | { status: "PASSWORD_REQUIRED" };
 
 const normalizeText = (value: string) => value.trim().toLowerCase();
+const getTelegramErrorMessage = (error: unknown): string => {
+  const err = error as { errorMessage?: string; message?: string } | undefined;
+  return String(err?.errorMessage ?? err?.message ?? "");
+};
+
+class TelegramServiceLogger extends Logger {
+  override canSend(level: LogLevel): boolean {
+    if (level === LogLevel.ERROR) {
+      return false;
+    }
+
+    return super.canSend(level);
+  }
+}
+
+const isPasswordRequiredError = (error: unknown): boolean => {
+  return getTelegramErrorMessage(error).includes("SESSION_PASSWORD_NEEDED");
+};
 
 const normalizeConfig = (config: TelegramConfig): TelegramConfig => ({
   ...config,
@@ -164,7 +183,8 @@ export class TelegramService {
 
     if (this.client) {
       try {
-        await this.client.disconnect();
+        // Use destroy() instead of disconnect(): disconnect keeps GramJS update loop alive.
+        await this.client.destroy();
       } catch {
         // ignore stale connection cleanup errors
       }
@@ -181,10 +201,21 @@ export class TelegramService {
 
     this.client = new TelegramClient(this.session, this.config.apiId, this.config.apiHash, {
       connectionRetries: 5,
+      baseLogger: new TelegramServiceLogger(LogLevel.INFO),
       // GramJS does not allow SSL/WSS transport with SOCKS/MT proxies.
       useWSS: !proxy,
       proxy
     });
+    this.client.onError = async (error) => {
+      const message = getTelegramErrorMessage(error);
+      if (message.includes("TIMEOUT")) {
+        // Update-loop timeout is transient; reconnect is automatic.
+        return;
+      }
+
+      // Keep non-timeout errors visible after suppressing GramJS default error printing.
+      console.error(error);
+    };
     this.qrTokenState = null;
 
     await this.client.connect();
@@ -274,7 +305,17 @@ export class TelegramService {
       return { status: "OK" };
     }
 
-    const tokenState = await this.exportQrToken();
+    let tokenState: QrTokenState | null;
+    try {
+      tokenState = await this.exportQrToken();
+    } catch (error) {
+      if (isPasswordRequiredError(error)) {
+        this.qrTokenState = null;
+        return { status: "PASSWORD_REQUIRED" };
+      }
+      throw error;
+    }
+
     if (!tokenState) {
       this.qrTokenState = null;
       return { status: "OK" };
@@ -296,7 +337,16 @@ export class TelegramService {
 
     let tokenState = this.qrTokenState;
     if (!tokenState || Date.now() >= tokenState.expiresAt - 5000) {
-      tokenState = await this.exportQrToken();
+      try {
+        tokenState = await this.exportQrToken();
+      } catch (error) {
+        if (isPasswordRequiredError(error)) {
+          this.qrTokenState = null;
+          return { status: "PASSWORD_REQUIRED" };
+        }
+        throw error;
+      }
+
       if (!tokenState) {
         this.qrTokenState = null;
         return { status: "OK" };
@@ -334,7 +384,17 @@ export class TelegramService {
       }
 
       if (message.includes("AUTH_TOKEN_EXPIRED") || message.includes("AUTH_TOKEN_INVALID")) {
-        const refreshed = await this.exportQrToken();
+        let refreshed: QrTokenState | null;
+        try {
+          refreshed = await this.exportQrToken();
+        } catch (refreshError) {
+          if (isPasswordRequiredError(refreshError)) {
+            this.qrTokenState = null;
+            return { status: "PASSWORD_REQUIRED" };
+          }
+          throw refreshError;
+        }
+
         if (!refreshed) {
           this.qrTokenState = null;
           return { status: "OK" };
@@ -543,9 +603,10 @@ export class TelegramService {
       }
 
       try {
-        await client.disconnect();
+        // Ensure update loop stops; disconnect() alone may keep reconnect loop running.
+        await client.destroy();
       } catch {
-        // ignore disconnect errors
+        // ignore destroy errors
       }
     }
 
