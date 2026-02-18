@@ -13,6 +13,22 @@
 
       <v-spacer />
 
+      <v-btn
+        href="https://github.com/SeimoDev/TG_Tools"
+        target="_blank"
+        rel="noopener noreferrer"
+        variant="text"
+        class="text-none mr-2"
+      >
+        <svg class="github-logo mr-1" viewBox="0 0 16 16" aria-hidden="true">
+          <path
+            d="M8 0a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38l-.01-1.33c-2.24.49-2.71-1.08-2.71-1.08-.36-.93-.89-1.18-.89-1.18-.73-.5.06-.49.06-.49.81.06 1.24.83 1.24.83.72 1.24 1.89.88 2.35.67.07-.52.28-.88.5-1.08-1.79-.2-3.68-.9-3.68-3.98 0-.88.31-1.6.82-2.17-.08-.2-.36-1.02.08-2.12 0 0 .67-.22 2.2.83a7.62 7.62 0 0 1 4 0c1.53-1.05 2.2-.83 2.2-.83.44 1.1.16 1.92.08 2.12.51.57.82 1.29.82 2.17 0 3.09-1.89 3.77-3.69 3.98.29.25.55.73.55 1.47l-.01 2.18c0 .21.14.46.55.38A8 8 0 0 0 8 0Z"
+            fill="currentColor"
+          />
+        </svg>
+        GitHub
+      </v-btn>
+
       <v-menu>
         <template #activator="{ props }">
           <v-btn v-bind="props" variant="text" class="text-none">
@@ -324,5 +340,11 @@ watch(
   flex: 0 0 auto;
   min-width: 96px;
   scroll-snap-align: start;
+}
+
+.github-logo {
+  width: 18px;
+  height: 18px;
+  display: inline-block;
 }
 </style>
